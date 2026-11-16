@@ -35,3 +35,8 @@ Dated entries, newest last. Record what was built, what was run against the real
   - Interactive outgoing-payment grant request succeeded and returned a consent redirect on the wallet's site.
   - NOT yet done: a person approving on the consent page, `grant.continue`, and `outgoingPayment.create`. That needs the owner in a browser.
   - The test customer and request this script created were deleted from the database afterwards.
+- 2026-11-16 21:47 WAT: **First real payment on the Interledger test wallet**, done by the owner in a browser on https://pay-alone.vercel.app.
+  - Seller (Mama Chris) requested USD 1.00. Customer (Gloria) app quoted debit USD 1.00 / receive USD 1.00, approval on the in-app screen, then one-time consent on the test wallet's own consent page.
+  - Callback hash verified, `grant.continue` returned a token, `outgoingPayment.create` succeeded (request status `paid`, outgoing payment id stored).
+  - Independent check from the seller side: the seller app re-read the incoming payment from Mama Chris's wallet: receivedAmount USD 100 (scale 2), status received.
+  - Still to confirm by eye: the payment appears in both wallets' transaction lists on wallet.interledger-test.dev.

@@ -2,7 +2,9 @@
 
 CU Next Gen Hackathon 2026, Track 2: Inclusive Payments and Financial Access. Built on Interledger Open Payments.
 
-> **Status, 16 Nov 2026:** the full journey runs against a **SIMULATED wallet** only. The real Open Payments client is written but has **not yet been run** against the Interledger test wallet, because the test wallet keys do not exist yet. Nothing below claims a real payment has been made.
+> **Status, 16 Nov 2026, night:** one real payment (USD 1.00) has been made app to app on the Interledger test wallet through the hosted app, with one-time consent on the wallet's own page. The spending limit, over-limit refusal and stop everything have so far run only against the SIMULATED wallet.
+
+Hosted: https://pay-alone.vercel.app (seller: `/merchant`, customer: `/wallet`).
 
 ## The problem
 Blind, elderly and non-reading Nigerians often cannot use their own money alone. Banks refuse cards, and apps and ATMs do not talk, so they hand a card and PIN to a helper. Helpers sometimes steal. See `docs/PITCH_EVIDENCE.md`.
@@ -45,9 +47,9 @@ Code: `src/lib/op/real.ts` (the SDK calls), `src/lib/domain.ts` (the journey), `
 ## What works today
 | Feature | Implemented | Simulated | Planned |
 |---|---|---|---|
-| Seller requests, customer approves, payment made |  | yes (pretend wallet) | real test wallet: code written, **not yet run** |
+| Seller requests, customer approves, payment made | yes, on the real test wallet (one-time consent) | also runs on the pretend wallet |  |
 | Amounts taken from the quote, integers in minor units | yes |  |  |
-| One-time consent on the wallet's page, with callback hash check |  | yes (pretend consent page) | real test wallet |
+| One-time consent on the wallet's page, with callback hash check | yes, on the real test wallet |  |  |
 | Spending limit set once, then approval inside the app |  | yes | real test wallet |
 | Wallet refuses a payment over the limit |  | yes (the pretend wallet refuses) | confirm the real wallet enforces it |
 | "Stop everything" cancels the permission |  | yes | real test wallet |
@@ -61,7 +63,7 @@ Code: `src/lib/op/real.ts` (the SDK calls), `src/lib/domain.ts` (the journey), `
 | Saved people announced in the customer's own recorded voice |  |  | yes |
 | Customer starts a payment themselves; spoken commands |  |  | yes |
 | USSD / feature-phone access |  |  | yes (not started) |
-| Hosted URL and deployed storage |  |  | yes (Vercel and Supabase) |
+| Hosted URL and deployed storage | yes (Vercel and Supabase) |  |  |
 
 ## Run it locally
 Needs Node 20 or newer.
@@ -95,7 +97,7 @@ npm test
 4. Run `npm run dev`.
 
 ## Limitations
-- No real payment has been made yet. See the status note at the top.
+- So far one real payment has been made. The spending limit has not yet been tried on the real wallet.
 - The consent page belongs to the wallet provider. We cannot restyle it, and its screen-reader accessibility is untested.
 - Approval needs the device unlocked. Nothing can approve money from a locked screen.
 - "Left of your limit" is our own record plus what the wallet reports after a payment. It is not an account balance; Open Payments has no balance endpoint.
