@@ -30,14 +30,30 @@ export function realConfigured(role: Role): boolean {
   return Boolean(process.env[e.url] && process.env[e.keyId] && process.env[e.key]);
 }
 
-/** Accepts the key as PEM text, as base64 of the PEM file, or as a path to the downloaded private.key. */
-function loadPrivateKey(raw: string): string | Buffer {
-  const v = raw.trim();
-  if (v.includes("BEGIN")) return Buffer.from(v.replace(/\\n/g, "\n"));
+function pem(body: string): Buffer {
+  const lines = body.match(/.{1,64}/g) ?? [];
+  return Buffer.from(`-----BEGIN PRIVATE KEY-----\n${lines.join("\n")}\n-----END PRIVATE KEY-----\n`);
+}
+
+/**
+ * Accepts the downloaded private.key in any of the shapes people paste it in:
+ * the whole PEM file, the PEM with its line breaks lost, only the middle base64 line,
+ * base64 of the whole file, or a path to the file. The key itself is never logged.
+ */
+export function loadPrivateKey(raw: string): string | Buffer {
+  const v = raw.trim().replace(/^["']|["']$/g, "").replace(/\\n/g, "\n");
+  if (v.includes("BEGIN")) {
+    const body = v.replace(/-----(BEGIN|END)[^-]*-----/g, "").replace(/\s+/g, "");
+    return pem(body);
+  }
   if (existsSync(v)) return v;
-  const decoded = Buffer.from(v, "base64");
-  if (decoded.toString("utf8").includes("BEGIN")) return decoded;
-  throw new Error("Private key is not PEM text, base64 of a PEM file, or a path to a key file.");
+  const compact = v.replace(/\s+/g, "");
+  if (/^[A-Za-z0-9+/=_-]+$/.test(compact)) {
+    const decoded = Buffer.from(compact, "base64");
+    if (decoded.toString("utf8").includes("BEGIN")) return loadPrivateKey(decoded.toString("utf8"));
+    if (decoded[0] === 0x30) return pem(decoded.toString("base64")); // a bare DER key, i.e. only the middle line
+  }
+  throw new Error("Private key is not in a recognised form (expected the contents of the downloaded private.key).");
 }
 
 export function normalizeWalletUrl(input: string): string {

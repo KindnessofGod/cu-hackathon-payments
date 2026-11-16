@@ -25,3 +25,13 @@ Dated entries, newest last. Record what was built, what was run against the real
   - Both report the same authServer and resourceServer (same test wallet tenant). Asset is USD, so the demo runs in USD, not naira; the UI formats from the wallet's own assetCode.
   - Not yet tested: anything that needs keys (grants, incoming payment, quote, outgoing payment).
 - 2026-11-16 (evening): Owner generated one developer key per wallet address. Checked each key ID against the wallet's public `jwks.json`: each wallet publishes exactly one Ed25519 key, and its kid matches the key ID the owner gave for it. Wallet addresses and key IDs added to the Vercel project's environment. Private keys are entered by the owner directly in Vercel; this session never sees them.
+- 2026-11-16 (night): Deployed to Vercel at https://pay-alone.vercel.app with simulated mode OFF, storage on a new Supabase Postgres project. Two deploy fixes:
+  - The private keys in Vercel were not in full PEM form, so the key loader now also accepts the bare middle line, PEM with lost line breaks, and base64 of the file (unit-tested with a generated Ed25519 key; the real keys were never seen by this session).
+  - The SDK reads its OpenAPI spec files from disk at runtime; Vercel left them out (`ENOENT .../openapi/specs/wallet-address-server.yaml`). Fixed with `outputFileTracingIncludes` in `next.config.ts`.
+- 2026-11-16 (night): REAL test wallet, via the deployed app (`/api/health`, then `npm run e2e` against the production URL):
+  - Signed `walletAddress.get` with each app's own key: both resolve (Mama Chris and Gloria, USD, scale 2).
+  - Seller: non-interactive incoming-payment grant and `incomingPayment.create` for USD 1.00 succeeded.
+  - Customer: non-interactive quote grant and `quote.create` succeeded: debitAmount USD 100 (scale 2), receiveAmount USD 100. No fee between these two addresses on the same test wallet account (the research doc expected a small fee; not seen here).
+  - Interactive outgoing-payment grant request succeeded and returned a consent redirect on the wallet's site.
+  - NOT yet done: a person approving on the consent page, `grant.continue`, and `outgoingPayment.create`. That needs the owner in a browser.
+  - The test customer and request this script created were deleted from the database afterwards.

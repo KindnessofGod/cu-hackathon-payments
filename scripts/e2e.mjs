@@ -64,7 +64,7 @@ check("customer wallet resolves", setup.status === 200, setup.json?.customer?.wa
 const payCode = setup.json.customer.payCode;
 
 // 1. One payment, consent on the wallet's page.
-const r1 = await request(payCode, "2000");
+const r1 = await request(payCode, simulated ? "2000" : (process.env.E2E_AMOUNT ?? "1"));
 check("quote comes from the payer wallet", Boolean(r1.pending?.debitAmount), `debit ${fmt(r1.pending?.debitAmount)}, receive ${fmt(r1.pending?.receiveAmount)}`);
 const a1 = await approve(r1.pending);
 check("no limit yet, so the wallet must be asked", Boolean(a1.json.redirectUrl));
