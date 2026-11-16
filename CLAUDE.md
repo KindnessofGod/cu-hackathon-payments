@@ -29,3 +29,17 @@ The current priority is the **core Open Payments transaction, app to app** (rece
 
 ## Style
 Plain, direct English. Small commits with clear messages. Ask the owner only for the human tasks in `docs/BUILD_PROMPT.md` section 5 or for real product decisions.
+
+## Agent skills
+
+### Issue tracker
+
+Tickets are local markdown files under `.scratch/<feature>/` in this repo. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five default labels, unchanged: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one `GLOSSARY.md` and `docs/adr/` at the repo root, created only when needed. See `docs/agents/domain.md`.
