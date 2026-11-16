@@ -21,5 +21,13 @@
 - Launch languages for voice: English and Pidgin first; Yoruba, Igbo, Hausa as stretch.
 - Hosting store for the deployed demo (SQLite locally; Supabase or Upstash when deployed).
 
+## Added 16 Nov
+- Does paying between two wallet addresses on the same test wallet account work? (Planned first test.)
+- What status and wording does the test wallet return for a payment over the grant limit? `src/lib/op/real.ts` guesses from the text; correct it once observed.
+- Does the callback hash use the auth server URL with or without a trailing slash? Both are accepted for now.
+- On iPadOS 26 (iPad Air 3): does VoiceOver focus a new lock-screen notification, will Siri open a Home Screen web app, and do passkeys work inside one?
+- Does the seller's PC have a webcam for scanning?
+- Team size: the rules require at least two students.
+
 ## Build log of problems
 (Builder: add anything that fails, with the exact error and what you tried.)

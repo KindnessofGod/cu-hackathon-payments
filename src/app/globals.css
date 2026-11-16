@@ -1,0 +1,77 @@
+:root {
+  --ink: #10172a;
+  --paper: #ffffff;
+  --soft: #f1f4f9;
+  --line: #5b6578;
+  --brand: #0b4fd6;
+  --good: #0a6b3b;
+  --bad: #a31621;
+  --warn-bg: #fff3bf;
+  --warn-ink: #4a3500;
+}
+* { box-sizing: border-box; }
+html { font-size: 112.5%; -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  line-height: 1.5;
+}
+main { max-width: 44rem; margin: 0 auto; padding: 1rem 1rem 4rem; }
+h1 { font-size: 1.7rem; line-height: 1.2; margin: 1rem 0 0.5rem; }
+h2 { font-size: 1.25rem; margin: 1.5rem 0 0.5rem; }
+p { margin: 0.5rem 0; }
+a { color: var(--brand); }
+.banner {
+  background: var(--warn-bg); color: var(--warn-ink);
+  border-bottom: 3px solid var(--warn-ink);
+  padding: 0.6rem 1rem; font-weight: 700; text-align: center;
+  position: sticky; top: 0; z-index: 20; min-height: 3rem;
+}
+.card { border: 2px solid var(--line); border-radius: 12px; padding: 1rem; margin: 1rem 0; background: var(--paper); }
+.muted { color: #3d4658; }
+label { display: block; font-weight: 700; margin: 0.9rem 0 0.3rem; }
+input, select {
+  width: 100%; font: inherit; font-size: 1.2rem; padding: 0.8rem;
+  border: 2px solid var(--line); border-radius: 10px; background: var(--paper); color: var(--ink);
+}
+button, .button {
+  font: inherit; font-size: 1.15rem; font-weight: 700;
+  min-height: 3.4rem; padding: 0.8rem 1.2rem; margin: 0.4rem 0;
+  border: 3px solid var(--brand); border-radius: 12px;
+  background: var(--brand); color: #fff; cursor: pointer;
+  display: inline-block; text-decoration: none; text-align: center;
+}
+button.wide, .button.wide { display: block; width: 100%; }
+button.secondary, .button.secondary { background: var(--paper); color: var(--brand); }
+button.danger { background: var(--bad); border-color: var(--bad); }
+button:disabled { opacity: 0.55; cursor: not-allowed; }
+:focus-visible { outline: 4px solid #ffb000; outline-offset: 3px; }
+.status { font-size: 1.3rem; font-weight: 700; padding: 1rem; border-radius: 12px; border: 3px solid var(--line); background: var(--soft); }
+.status.good { border-color: var(--good); }
+.status.bad { border-color: var(--bad); }
+.amount { font-size: 2rem; font-weight: 800; line-height: 1.15; }
+dl.facts { display: grid; grid-template-columns: auto 1fr; gap: 0.3rem 1rem; margin: 0.6rem 0; }
+dl.facts dt { font-weight: 700; }
+dl.facts dd { margin: 0; }
+.code { font-size: 2.2rem; font-weight: 800; letter-spacing: 0.25em; }
+.row { display: flex; gap: 0.6rem; flex-wrap: wrap; }
+.row > * { flex: 1 1 10rem; }
+.qr { display: block; width: min(100%, 22rem); margin: 0.5rem auto; background: #fff; }
+video.scan { width: 100%; border-radius: 12px; border: 2px solid var(--line); background: #000; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* The approval screen: the whole screen is one button, so there is nothing to aim at. */
+.takeover { position: fixed; inset: 0; z-index: 10; background: var(--ink); color: #fff; display: flex; flex-direction: column; }
+.takeover .approve {
+  flex: 1 1 auto; margin: 0; border: 0; border-radius: 0; min-height: 0;
+  background: var(--ink); color: #fff; font-size: 1.5rem; line-height: 1.35;
+  padding: 1.5rem; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1rem;
+}
+.takeover .approve.armed { background: #06381f; }
+.takeover .approve .amount { font-size: 2.6rem; }
+.takeover .refuse { flex: 0 0 auto; margin: 0; border-radius: 0; border: 0; border-top: 4px solid #fff; background: #000; color: #fff; min-height: 5rem; font-size: 1.3rem; }
+
+/* The SIMULATED banner must stay visible on the approval screen too. */
+.simulated .takeover { top: 3rem; }
