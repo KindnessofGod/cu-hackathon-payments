@@ -19,3 +19,8 @@ Dated entries, newest last. Record what was built, what was run against the real
 - Simulated: the wallet, its 1% fee, its limit enforcement, its consent page.
 - Planned: real test wallet run, deployment, fingerprint passkey, voice labels, lock-screen notification, provider voices.
 - Riskiest things before the demo: (1) the real wallet's behaviour is untested, including whether it enforces the interval limit and what error it returns; (2) passkeys and notifications inside a Home Screen web app on iPadOS are untested; (3) the rules require two students per team.
+- 2026-11-16 (evening): Owner created the test wallet and two wallet addresses. First real call: a plain GET on each wallet address from this session (no keys needed). Result:
+  - `https://ilp.interledger-test.dev/gloria-customer`: publicName "Gloria", assetCode USD, assetScale 2. Role: customer (payer).
+  - `https://ilp.interledger-test.dev/mamachris-customer`: publicName "Mama Chris", assetCode USD, assetScale 2. Role: seller (receiver).
+  - Both report the same authServer and resourceServer (same test wallet tenant). Asset is USD, so the demo runs in USD, not naira; the UI formats from the wallet's own assetCode.
+  - Not yet tested: anything that needs keys (grants, incoming payment, quote, outgoing payment).
