@@ -24,3 +24,4 @@ Dated entries, newest last. Record what was built, what was run against the real
   - `https://ilp.interledger-test.dev/mamachris-customer`: publicName "Mama Chris", assetCode USD, assetScale 2. Role: seller (receiver).
   - Both report the same authServer and resourceServer (same test wallet tenant). Asset is USD, so the demo runs in USD, not naira; the UI formats from the wallet's own assetCode.
   - Not yet tested: anything that needs keys (grants, incoming payment, quote, outgoing payment).
+- 2026-11-16 (evening): Owner generated one developer key per wallet address. Checked each key ID against the wallet's public `jwks.json`: each wallet publishes exactly one Ed25519 key, and its kid matches the key ID the owner gave for it. Wallet addresses and key IDs added to the Vercel project's environment. Private keys are entered by the owner directly in Vercel; this session never sees them.
