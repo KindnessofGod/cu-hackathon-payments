@@ -1,0 +1,13 @@
+node_modules/
+.next/
+dist/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+private*.key
+*.sqlite
+*.db
+.vercel/
+.DS_Store
