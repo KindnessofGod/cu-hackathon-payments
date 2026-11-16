@@ -253,6 +253,7 @@ export function capSummary(cap: Cap | undefined) {
     spent,
     left: remainingOfCap(cap.limit, spent),
     periodEnds: periodEnd(cap.interval, Date.now()),
+    grantedAt: cap.grantedAt,
     walletReportedSpent: cap.walletReportedSpent,
   };
 }

@@ -13,6 +13,7 @@ interface CapView {
   spent: Amount;
   left: Amount;
   periodEnds: string | null;
+  grantedAt: string;
   walletReportedSpent?: Amount;
 }
 
@@ -451,18 +452,21 @@ function Limit({
             You allowed up to <strong>{formatAmount(cap.limit)}</strong> every {cap.every}. Your wallet enforces this, not this app.
           </p>
           <dl className="facts">
-            <dt>Spent this {cap.every}, by our record</dt>
+            <dt>Spent under this limit this {cap.every}, by our record</dt>
             <dd>{formatAmount(cap.spent)}</dd>
             <dt>Left of your limit</dt>
             <dd className="amount">{formatAmount(cap.left)}</dd>
             {cap.walletReportedSpent && (
               <>
-                <dt>Spent, as last reported by the wallet</dt>
+                <dt>Spent under this limit, as last reported by the wallet</dt>
                 <dd>{formatAmount(cap.walletReportedSpent)}</dd>
               </>
             )}
           </dl>
-          <p className="muted">This is what is left of your limit, not your account balance. Open Payments does not let an app read a balance.</p>
+          <p className="muted">
+            Counts only payments made through this app since you set the limit on {new Date(cap.grantedAt).toLocaleDateString()}. Payments made before that, or outside this app, are not
+            included. This is what is left of your limit, not your account balance: Open Payments does not let an app read a balance.
+          </p>
           <button className="wide secondary" onClick={() => say(`${speakAmount(cap.left)} is left of your limit of ${speakAmount(cap.limit)} for this ${cap.every}.`)}>
             Say what is left aloud
           </button>
@@ -478,7 +482,7 @@ function Limit({
           </p>
           <p className="muted">Without a limit, every payment sends you to your wallet&apos;s page to confirm.</p>
           <label htmlFor="cap-amount">Limit in {customer.assetCode}</label>
-          <input id="cap-amount" inputMode="decimal" autoComplete="off" required placeholder="20000" value={amount} onChange={(e) => setAmount(e.target.value)} />
+          <input id="cap-amount" inputMode="decimal" autoComplete="off" required placeholder={customer.assetCode === "NGN" ? "20000" : "50"} value={amount} onChange={(e) => setAmount(e.target.value)} />
           <label htmlFor="cap-every">Every</label>
           <select id="cap-every" value={every} onChange={(e) => setEvery(e.target.value === "day" ? "day" : "week")}>
             <option value="week">Week</option>
