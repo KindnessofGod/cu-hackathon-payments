@@ -1,7 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AppBar, Avatar, Icon } from "@/components/ui";
 import { api, errorText, type ApiError } from "@/lib/client";
 import { formatAmount, speakAmount, type Amount } from "@/lib/money";
 import { BrowserSpeechOutput, HostedSpeechOutput } from "@/lib/speech";
@@ -202,21 +202,25 @@ export default function WalletPage() {
 
   if (loadError && !state) {
     return (
-      <main>
-        <h1>Customer</h1>
-        <div className="status bad" role="alert">
-          <p>{loadError.message}</p>
-          <button onClick={() => void refresh()}>Try again</button>
-        </div>
-      </main>
+      <>
+        <AppBar role="Customer" />
+        <main>
+          <div className="status bad" role="alert">
+            <p>{loadError.message}</p>
+            <button onClick={() => void refresh()}>Try again</button>
+          </div>
+        </main>
+      </>
     );
   }
   if (!state) {
     return (
-      <main>
-        <h1>Customer</h1>
-        <p role="status">Loading…</p>
-      </main>
+      <>
+        <AppBar role="Customer" />
+        <main>
+          <p role="status">Loading…</p>
+        </main>
+      </>
     );
   }
   if (!state.customer) return <Setup suggested={state.suggestedWalletAddress ?? ""} simulated={state.simulated} onDone={() => void refresh()} />;
@@ -266,31 +270,40 @@ function Setup({ suggested, simulated, onDone }: { suggested: string; simulated:
   }
 
   return (
-    <main>
-      <p>
-        <Link href="/">Back</Link>
-      </p>
-      <h1>Set up this device</h1>
-      <p>This is done once. Enter the wallet address you pay from.</p>
-      <form onSubmit={submit} className="card">
-        <label htmlFor="wa">Your wallet address</label>
-        <input id="wa" inputMode="url" autoCapitalize="none" autoCorrect="off" spellCheck={false} required value={walletAddress} onChange={(e) => setWalletAddress(e.target.value)} />
-        <p className="muted">
-          {simulated
-            ? "Simulated mode: any address on the pretend wallet works, for example the one filled in."
-            : "Use a wallet address from the Interledger test wallet, for example https://ilp.interledger-test.dev/yourname."}
-        </p>
-        {error && (
-          <div className="status bad" role="alert">
-            <p>{error.message}</p>
-            {error.walletSaid && <p className="muted">The wallet said: {error.walletSaid}</p>}
-          </div>
-        )}
-        <button className="wide" disabled={busy}>
-          {busy ? "Checking the wallet…" : "Use this wallet"}
-        </button>
-      </form>
-    </main>
+    <>
+      <AppBar role="Customer" />
+      <main>
+        <h1>Set up this device</h1>
+        <p className="lead">This is done once. Enter the wallet address you pay from.</p>
+        <form onSubmit={submit} className="card" style={{ maxWidth: "40rem" }}>
+          <label htmlFor="wa">Your wallet address</label>
+          <input
+            id="wa"
+            inputMode="url"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            required
+            value={walletAddress}
+            onChange={(e) => setWalletAddress(e.target.value)}
+          />
+          <p className="muted">
+            {simulated
+              ? "Simulated mode: any address on the pretend wallet works, for example the one filled in."
+              : "Use a wallet address from the Interledger test wallet, for example https://ilp.interledger-test.dev/yourname."}
+          </p>
+          {error && (
+            <div className="status bad" role="alert">
+              <p>{error.message}</p>
+              {error.walletSaid && <p className="muted">The wallet said: {error.walletSaid}</p>}
+            </div>
+          )}
+          <button className="wide" disabled={busy}>
+            {busy ? "Checking the wallet…" : "Use this wallet"}
+          </button>
+        </form>
+      </main>
+    </>
   );
 }
 
@@ -316,7 +329,9 @@ function Approve({
   const buttonRef = useRef<HTMLButtonElement>(null);
   const ready = Boolean(request.challenge && request.debitAmount);
   const sentence = useMemo(() => requestSentence(request), [request]);
-  const consentNote = request.needsWalletConsent ? " You have no spending limit yet, so your wallet will ask you to confirm this one payment on its own page." : "";
+  const consentNote = request.needsWalletConsent
+    ? " You have no spending limit yet, so your wallet will ask you to confirm this one payment on its own page."
+    : "";
 
   useEffect(() => {
     buttonRef.current?.focus();
@@ -352,7 +367,11 @@ function Approve({
         optionsJSON: {
           challenge: request.deviceChallenge!,
           rpId: window.location.hostname,
-          allowCredentials: fingerprint.map((f) => ({ id: f.id, type: "public-key" as const, transports: f.transports as AuthenticatorTransport[] | undefined })),
+          allowCredentials: fingerprint.map((f) => ({
+            id: f.id,
+            type: "public-key" as const,
+            transports: f.transports as AuthenticatorTransport[] | undefined,
+          })),
           userVerification: "required",
           timeout: 60000,
         },
@@ -410,10 +429,15 @@ function Approve({
   return (
     <div className="takeover" role="dialog" aria-modal="true" aria-label="Payment request">
       <button ref={buttonRef} className={`approve ${armed ? "armed" : ""}`} onClick={() => void activate()} disabled={busy} aria-describedby="approve-how">
-        <span>{request.knownPayee ? request.merchantName : `NEW person: ${request.merchantName}`} is asking for</span>
+        <Avatar name={request.merchantName} />
+        {!request.knownPayee && <span className="new-tag">New person</span>}
+        <span className="who">{request.merchantName} is asking for</span>
         <span className="amount">{formatAmount(request.receiveAmount ?? request.requested)}</span>
-        {request.debitAmount && <span>{formatAmount(request.debitAmount)} will leave your account</span>}
-        <span id="approve-how">{instruction}</span>
+        {request.debitAmount && <span className="debit">{formatAmount(request.debitAmount)} will leave your account</span>}
+        <span className="how" id="approve-how">
+          <Icon name={armed && needsFinger ? "finger" : armed ? "check" : "speaker"} size={26} />
+          {instruction}
+        </span>
       </button>
       <div className="sr-only" role="status" aria-live="assertive">
         {message}
@@ -444,86 +468,104 @@ function Home(props: {
   const digits = customer.payCode.split("").join(" ");
 
   return (
-    <main>
-      <p>
-        <Link href="/">Back</Link>
-      </p>
-      <h1>Customer</h1>
-      <p className="muted">
-        Paying from {customer.name ? `${customer.name}, ` : ""}
-        {customer.walletAddress} in {customer.assetCode}.
-      </p>
-
-      {notice && (
-        <div className={`status ${notice.good ? "good" : "bad"}`} role="status" aria-live="polite">
-          <p>
-            {notice.good ? "✓ " : "✕ "}
-            {notice.text}
-          </p>
-          {notice.walletSaid && <p className="muted">The wallet said: {notice.walletSaid}</p>}
-        </div>
-      )}
-      {props.loadError && <p role="alert">Cannot check for new requests: {props.loadError.message} Still trying.</p>}
-
-      <section className="card" aria-labelledby="code-h">
-        <h2 id="code-h">Your pay code</h2>
-        <p>Show this to a seller so they can ask you for a payment. It cannot take money. Only your approval can.</p>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img className="qr" src="/api/wallet/paycode" alt={`QR code for pay code ${digits}`} />
-        <p className="code" aria-label={`Pay code ${digits}`}>
-          {customer.payCode}
-        </p>
-        <button className="wide secondary" onClick={() => say(`Your pay code is ${digits}. Again: ${digits}.`)}>
-          Say my pay code aloud
-        </button>
-        <LockScreenPicture payCode={customer.payCode} />
-      </section>
-
-      <Fingerprint customer={customer} refresh={props.refresh} say={say} />
-
-      <Limit cap={cap} customer={customer} refresh={props.refresh} say={say} sayOurs={props.sayOurs} setNotice={props.setNotice} />
-
-      <History items={props.history} say={say} />
-
-      <section className="card" aria-labelledby="set-h">
-        <h2 id="set-h">Settings</h2>
-        <label style={{ display: "flex", gap: "0.8rem", alignItems: "center", fontWeight: 400 }}>
-          <input type="checkbox" style={{ width: "1.6rem", height: "1.6rem" }} checked={props.prefs.on} onChange={(e) => props.setPrefs({ ...props.prefs, on: e.target.checked })} />
-          <span>The app speaks aloud. Turn this off if you use VoiceOver or TalkBack, which already read the screen.</span>
-        </label>
-        <label style={{ display: "flex", gap: "0.8rem", alignItems: "center", fontWeight: 400 }}>
-          <input
-            type="checkbox"
-            style={{ width: "1.6rem", height: "1.6rem" }}
-            checked={props.prefs.natural}
-            disabled={!props.prefs.on}
-            onChange={(e) => props.setPrefs({ ...props.prefs, natural: e.target.checked })}
-          />
-          <span>Natural voice for requests and results (ElevenLabs, or Spitch for Igbo). Needs internet; if it is slow, the device&apos;s own English voice is used.</span>
-        </label>
-        <label htmlFor="lang">Language for requests and results</label>
-        <select id="lang" value={props.prefs.lang} disabled={!props.prefs.on || !props.prefs.natural} onChange={(e) => props.setPrefs({ ...props.prefs, lang: e.target.value as Lang })}>
-          {(Object.keys(LANG_NAMES) as Lang[]).map((l) => (
-            <option key={l} value={l}>
-              {LANG_NAMES[l]}
-            </option>
-          ))}
-        </select>
+    <>
+      <AppBar role="Customer" />
+      <main>
+        <h1>Hello{customer.name ? `, ${customer.name}` : ""}</h1>
         <p className="muted">
-          Amounts are always said in English, as most people say them. The Pidgin, Yoruba, Igbo and Hausa sentences have not yet been checked by a native speaker. Instructions are
-          in English for now.
+          Paying from {customer.walletAddress} in {customer.assetCode}.
         </p>
-        <button
-          className="secondary"
-          onClick={async () => {
-            await api("/api/wallet/setup", { method: "DELETE" });
-            props.refresh();
-          }}
-        >
-          Forget this device
-        </button>
-      </section>
-    </main>
+
+        {notice && (
+          <div className={`status ${notice.good ? "good" : "bad"}`} role="status" aria-live="polite">
+            <span className="status-icon">
+              <Icon name={notice.good ? "check" : "cross"} size={18} />
+            </span>
+            <div>
+              <p>{notice.text}</p>
+              {notice.walletSaid && <p className="muted">The wallet said: {notice.walletSaid}</p>}
+            </div>
+          </div>
+        )}
+        {props.loadError && <p role="alert">Cannot check for new requests: {props.loadError.message} Still trying.</p>}
+
+        <section className="card" aria-labelledby="code-h">
+          <div className="paycode">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img className="qr" src="/api/wallet/paycode" alt={`QR code for pay code ${digits}`} />
+            <div>
+              <h2 id="code-h">Your pay code</h2>
+              <p className="code" aria-label={`Pay code ${digits}`}>
+                {customer.payCode}
+              </p>
+              <p className="muted">Show it to a seller so they can ask you for a payment. It cannot take money. Only your fingerprint can.</p>
+              <button className="wide secondary" onClick={() => say(`Your pay code is ${digits}. Again: ${digits}.`)}>
+                <Icon name="speaker" size={22} /> Say my pay code aloud
+              </button>
+              <LockScreenPicture payCode={customer.payCode} />
+            </div>
+          </div>
+        </section>
+
+        <div className="grid-2">
+          <Limit cap={cap} customer={customer} refresh={props.refresh} say={say} sayOurs={props.sayOurs} setNotice={props.setNotice} />
+          <Fingerprint customer={customer} refresh={props.refresh} say={say} />
+        </div>
+
+        <History items={props.history} say={say} />
+
+        <details className="card">
+          <summary>
+            <span className="card-icon">
+              <Icon name="gear" size={22} />
+            </span>
+            Voice and settings
+          </summary>
+          <label className="toggle">
+            <input type="checkbox" checked={props.prefs.on} onChange={(e) => props.setPrefs({ ...props.prefs, on: e.target.checked })} />
+            <span>The app speaks aloud. Turn this off if you use VoiceOver or TalkBack, which already read the screen.</span>
+          </label>
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={props.prefs.natural}
+              disabled={!props.prefs.on}
+              onChange={(e) => props.setPrefs({ ...props.prefs, natural: e.target.checked })}
+            />
+            <span>
+              Natural voice for requests and results (ElevenLabs, or Spitch for Igbo). Needs internet; if it is slow, the device&apos;s own English voice is
+              used.
+            </span>
+          </label>
+          <label htmlFor="lang">Language for requests and results</label>
+          <select
+            id="lang"
+            value={props.prefs.lang}
+            disabled={!props.prefs.on || !props.prefs.natural}
+            onChange={(e) => props.setPrefs({ ...props.prefs, lang: e.target.value as Lang })}
+          >
+            {(Object.keys(LANG_NAMES) as Lang[]).map((l) => (
+              <option key={l} value={l}>
+                {LANG_NAMES[l]}
+              </option>
+            ))}
+          </select>
+          <p className="muted">
+            Amounts are always said in English, as most people say them. The Pidgin, Yoruba, Igbo and Hausa sentences have not yet been checked by a native
+            speaker. Instructions are in English for now.
+          </p>
+          <button
+            className="secondary"
+            onClick={async () => {
+              await api("/api/wallet/setup", { method: "DELETE" });
+              props.refresh();
+            }}
+          >
+            Forget this device
+          </button>
+        </details>
+      </main>
+    </>
   );
 }
 
@@ -585,27 +627,32 @@ function Limit({
 
   return (
     <section className="card" aria-labelledby="limit-h">
-      <h2 id="limit-h">Your spending limit</h2>
+      <div className="card-head">
+        <span className="card-icon">
+          <Icon name="shield" size={22} />
+        </span>
+        <h2 id="limit-h">Spending limit</h2>
+      </div>
       {cap?.status === "active" ? (
         <>
+          <p className="muted">Left this {cap.every}</p>
+          <p className="amount">{formatAmount(cap.left)}</p>
+          <Meter spent={cap.spent} limit={cap.limit} />
           <p>
-            You allowed up to <strong>{formatAmount(cap.limit)}</strong> every {cap.every}. Your wallet enforces this, not this app.
+            Up to <strong>{formatAmount(cap.limit)}</strong> every {cap.every}. Your wallet enforces this, not this app.
           </p>
-          <dl className="facts">
-            <dt>Spent under this limit this {cap.every}, by our record</dt>
-            <dd>{formatAmount(cap.spent)}</dd>
-            <dt>Left of your limit</dt>
-            <dd className="amount">{formatAmount(cap.left)}</dd>
-          </dl>
           <p className="muted">
-            Counts only payments made through this app since you set the limit on {new Date(cap.grantedAt).toLocaleDateString()}. Payments made before that, or outside this app, are not
-            included. This is what is left of your limit, not your account balance: Open Payments does not let an app read a balance.
+            Counts payments through this app since {new Date(cap.grantedAt).toLocaleDateString()}. This is your limit, not your account balance: Open Payments does not let an app
+            read a balance.
           </p>
-          <button className="wide secondary" onClick={() => sayOurs({ what: "left" }, `${speakAmount(cap.left)} is left of your limit of ${speakAmount(cap.limit)} for this ${cap.every}.`)}>
-            Say what is left aloud
+          <button
+            className="wide secondary"
+            onClick={() => sayOurs({ what: "left" }, `${speakAmount(cap.left)} is left of your limit of ${speakAmount(cap.limit)} for this ${cap.every}.`)}
+          >
+            <Icon name="speaker" size={22} /> Say what is left aloud
           </button>
           <button className="wide danger" disabled={busy} onClick={() => void stop()}>
-            {confirmStop ? "Tap again to stop everything" : "Stop everything"}
+            <Icon name="stop" size={22} /> {confirmStop ? "Tap again to stop everything" : "Stop everything"}
           </button>
         </>
       ) : (
@@ -616,7 +663,15 @@ function Limit({
           </p>
           <p className="muted">Without a limit, every payment sends you to your wallet&apos;s page to confirm.</p>
           <label htmlFor="cap-amount">Limit in {customer.assetCode}</label>
-          <input id="cap-amount" inputMode="decimal" autoComplete="off" required placeholder={customer.assetCode === "NGN" ? "20000" : "50"} value={amount} onChange={(e) => setAmount(e.target.value)} />
+          <input
+            id="cap-amount"
+            inputMode="decimal"
+            autoComplete="off"
+            required
+            placeholder={customer.assetCode === "NGN" ? "20000" : "50"}
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+          />
           <label htmlFor="cap-every">Every</label>
           <select id="cap-every" value={every} onChange={(e) => setEvery(e.target.value === "day" ? "day" : "week")}>
             <option value="week">Week</option>
@@ -634,6 +689,23 @@ function Limit({
         </div>
       )}
     </section>
+  );
+}
+
+function Meter({ spent, limit }: { spent: Amount; limit: Amount }) {
+  // Display only: the percentage is for the bar's width, never for money decisions.
+  const pct = BigInt(limit.value) > BigInt(0) ? Number((BigInt(spent.value) * BigInt(100)) / BigInt(limit.value)) : 0;
+  const width = Math.min(100, Math.max(0, pct));
+  return (
+    <>
+      <div className={`meter ${width >= 80 ? "high" : ""}`} role="img" aria-label={`${formatAmount(spent)} spent of ${formatAmount(limit)}`}>
+        <span style={{ width: `${width}%` }} />
+      </div>
+      <div className="meter-legend" aria-hidden="true">
+        <span>{formatAmount(spent)} spent</span>
+        <span>{formatAmount(limit)}</span>
+      </div>
+    </>
   );
 }
 
@@ -678,7 +750,7 @@ function LockScreenPicture({ payCode }: { payCode: string }) {
   return (
     <>
       <button className="wide secondary" onClick={() => void make()}>
-        Make a lock-screen picture of my pay code
+        Make a lock-screen picture
       </button>
       {problem && <p role="alert">{problem}</p>}
     </>
@@ -687,8 +759,7 @@ function LockScreenPicture({ payCode }: { payCode: string }) {
 
 // ---------- history ----------
 
-const when = (iso: string) =>
-  new Date(iso).toLocaleString(undefined, { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
+const when = (iso: string) => new Date(iso).toLocaleString(undefined, { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
 
 function historyLine(h: HistoryItem): { title: string; detail: string; good: boolean } {
   const amount = h.debitAmount ?? h.requested;
@@ -700,9 +771,17 @@ function historyLine(h: HistoryItem): { title: string; detail: string; good: boo
         good: true,
       };
     case "declined":
-      return { title: `Not paid: ${h.merchantName} asked for ${formatAmount(h.receiveAmount ?? h.requested)}`, detail: h.failure?.message ?? "Refused.", good: false };
+      return {
+        title: `Not paid: ${h.merchantName} asked for ${formatAmount(h.receiveAmount ?? h.requested)}`,
+        detail: h.failure?.message ?? "Refused.",
+        good: false,
+      };
     case "expired":
-      return { title: `Not paid: ${h.merchantName} asked for ${formatAmount(h.receiveAmount ?? h.requested)}`, detail: "The request ran out of time.", good: false };
+      return {
+        title: `Not paid: ${h.merchantName} asked for ${formatAmount(h.receiveAmount ?? h.requested)}`,
+        detail: "The request ran out of time.",
+        good: false,
+      };
     case "failed":
       return { title: `Not paid: ${formatAmount(amount)} to ${h.merchantName}`, detail: h.failure?.message ?? "The payment failed.", good: false };
     default:
@@ -714,14 +793,20 @@ function spokenHistory(h: HistoryItem): string {
   const amount = h.debitAmount ?? h.requested;
   const day = new Date(h.at).toLocaleString(undefined, { weekday: "long", hour: "numeric", minute: "2-digit" });
   if (h.status === "paid") return `${day}: paid ${speakAmount(amount)} to ${h.merchantName}.`;
-  if (h.status === "failed" && h.failure?.kind === "limit_exceeded") return `${day}: ${h.merchantName} asked for ${speakAmount(amount)}. Your wallet refused it. Over your limit.`;
+  if (h.status === "failed" && h.failure?.kind === "limit_exceeded")
+    return `${day}: ${h.merchantName} asked for ${speakAmount(amount)}. Your wallet refused it. Over your limit.`;
   return `${day}: ${h.merchantName} asked for ${speakAmount(h.receiveAmount ?? h.requested)}. Not paid.`;
 }
 
 function History({ items, say }: { items: HistoryItem[]; say: (t: string) => void }) {
   return (
     <section className="card" aria-labelledby="hist-h">
-      <h2 id="hist-h">Your payments</h2>
+      <div className="card-head">
+        <span className="card-icon">
+          <Icon name="list" size={22} />
+        </span>
+        <h2 id="hist-h">Your payments</h2>
+      </div>
       <p className="muted">Payments and requests through this app, newest first. Your wallet&apos;s own transaction list is the full record.</p>
       {items.length === 0 ? (
         <p>No payments yet.</p>
@@ -734,7 +819,7 @@ function History({ items, say }: { items: HistoryItem[]; say: (t: string) => voi
               say(`Your last ${Math.min(3, items.length)} payments. ${lastThree}`);
             }}
           >
-            Say my last payments aloud
+            <Icon name="speaker" size={22} /> Say my last payments aloud
           </button>
           <ol className="history">
             {items.map((h) => {
@@ -742,7 +827,7 @@ function History({ items, say }: { items: HistoryItem[]; say: (t: string) => voi
               return (
                 <li key={h.id} className={line.good ? "good" : "bad"}>
                   <span className="mark" aria-hidden="true">
-                    {line.good ? "✓" : "✕"}
+                    <Icon name={line.good ? "check" : "cross"} size={18} />
                   </span>
                   <div>
                     <p className="title">{line.title}</p>
@@ -810,7 +895,12 @@ function Fingerprint({ customer, refresh, say }: { customer: CustomerView; refre
 
   return (
     <section className="card" aria-labelledby="fp-h">
-      <h2 id="fp-h">Fingerprint</h2>
+      <div className="card-head">
+        <span className="card-icon">
+          <Icon name="finger" size={22} />
+        </span>
+        <h2 id="fp-h">Fingerprint</h2>
+      </div>
       {on ? (
         <p>
           <strong>On.</strong> Every payment needs your fingerprint on this device, so nobody else can approve a payment by tapping the screen. Set up on{" "}
@@ -822,7 +912,7 @@ function Fingerprint({ customer, refresh, say }: { customer: CustomerView; refre
         <>
           <p>Use the fingerprint on this device to approve payments. Your fingerprint stays on the device; this app never sees it.</p>
           <button className="wide" disabled={!options || busy} onClick={() => void setUp()}>
-            {busy ? "Waiting for your finger…" : options ? "Set up my fingerprint" : "Getting ready…"}
+            <Icon name="finger" size={22} /> {busy ? "Waiting for your finger…" : options ? "Set up my fingerprint" : "Getting ready…"}
           </button>
         </>
       )}

@@ -1,7 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { AppBar, Icon } from "@/components/ui";
 import { api, errorText, type ApiError } from "@/lib/client";
 import { formatAmount, type Amount } from "@/lib/money";
 
@@ -95,137 +95,205 @@ export default function MerchantPage() {
   }
 
   return (
-    <main>
-      <p>
-        <Link href="/">Back</Link>
-      </p>
-      <h1>Seller</h1>
-      {loadError && (
-        <div className="status bad" role="alert">
-          <p>Could not load the seller wallet. {loadError.message}</p>
-          {loadError.walletSaid && <p className="muted">The wallet said: {loadError.walletSaid}</p>}
-          <button onClick={load}>Try again</button>
-        </div>
-      )}
-      {!data && !loadError && <p role="status">Loading the seller wallet…</p>}
-      {data && (
-        <p className="muted">
-          Receiving as <strong>{data.merchant.name}</strong> in {data.merchant.assetCode}. Wallet address: {data.merchant.walletAddress}
-        </p>
-      )}
-
-      {data && !view && (
-        <form onSubmit={send} className="card">
-          <h2>Ask a customer to pay</h2>
-          <label htmlFor="paycode">Customer pay code (6 digits)</label>
-          <input
-            id="paycode"
-            inputMode="numeric"
-            autoComplete="off"
-            pattern="[0-9 ]{6,7}"
-            required
-            value={payCode}
-            onChange={(e) => setPayCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-          />
-          <button type="button" className="secondary wide" onClick={() => setScanning((s) => !s)} aria-expanded={scanning}>
-            {scanning ? "Close the camera" : "Scan the customer's code with the camera"}
-          </button>
-          {scanning && (
-            <Scanner
-              onCode={(code) => {
-                setPayCode(code);
-                setScanning(false);
-              }}
-            />
-          )}
-          {data.recentCustomers.length > 0 && (
-            <fieldset style={{ border: 0, padding: 0, margin: "0.8rem 0 0" }}>
-              <legend style={{ fontWeight: 700 }}>Recent customers</legend>
-              <div className="row">
-                {data.recentCustomers.map((c) => (
-                  <button key={c.payCode} type="button" className="secondary" onClick={() => setPayCode(c.payCode)}>
-                    {c.name} ({c.payCode})
-                  </button>
-                ))}
-              </div>
-            </fieldset>
-          )}
-          <label htmlFor="amount">Amount in {data.merchant.assetCode}</label>
-          <input id="amount" inputMode="decimal" autoComplete="off" required placeholder="2000" value={amount} onChange={(e) => setAmount(e.target.value)} />
-          {error && (
-            <div className="status bad" role="alert" style={{ marginTop: "1rem" }}>
-              <p>{error.message}</p>
-              {error.walletSaid && <p className="muted">The wallet said: {error.walletSaid}</p>}
-            </div>
-          )}
-          <button className="wide" disabled={busy} style={{ marginTop: "1rem" }}>
-            {busy ? "Sending the request…" : "Request payment"}
-          </button>
-        </form>
-      )}
-
-      {view && (
-        <section className="card" aria-labelledby="req-h">
-          <h2 id="req-h">Request to customer {view.customerPayCode}</h2>
-          <div ref={statusRef} tabIndex={-1} role="status" aria-live="polite" className={`status ${view.status === "received" ? "good" : view.status === "waiting" ? "" : "bad"}`}>
-            {view.status === "received" ? "✓ " : view.status === "waiting" ? "… " : "✕ "}
-            {STATUS_TEXT[view.status]}
-            {view.reason ? `. ${view.reason}` : ""}
+    <>
+      <AppBar role="Seller" />
+      <main>
+        <h1>{data ? data.merchant.name : "Seller"}</h1>
+        {loadError && (
+          <div className="status bad" role="alert">
+            <p>Could not load the seller wallet. {loadError.message}</p>
+            {loadError.walletSaid && <p className="muted">The wallet said: {loadError.walletSaid}</p>}
+            <button onClick={load}>Try again</button>
           </div>
-          <dl className="facts">
-            <dt>Asked for</dt>
-            <dd>{formatAmount(view.requested)}</dd>
-            <dt>Received, as reported by the wallet</dt>
-            <dd className="amount">{formatAmount(view.received)}</dd>
-          </dl>
-          {pollError && (
-            <p role="alert">
-              Cannot check the wallet right now: {pollError.message} Still trying.
-            </p>
+        )}
+        {!data && !loadError && <p role="status">Loading the seller wallet…</p>}
+        {data && (
+          <p className="muted">
+            Receiving in {data.merchant.assetCode} at {data.merchant.walletAddress}
+          </p>
+        )}
+
+        <div className="split">
+          {data && !view && (
+            <form onSubmit={send} className="card">
+              <div className="card-head">
+                <span className="card-icon seller">
+                  <Icon name="shop" size={22} />
+                </span>
+                <h2>Ask a customer to pay</h2>
+              </div>
+              <label htmlFor="paycode">Customer pay code</label>
+              <input
+                className="code-input"
+                placeholder="000000"
+                id="paycode"
+                inputMode="numeric"
+                autoComplete="off"
+                pattern="[0-9 ]{6,7}"
+                required
+                value={payCode}
+                onChange={(e) => setPayCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+              />
+              <button type="button" className="secondary wide" onClick={() => setScanning((s) => !s)} aria-expanded={scanning}>
+                <Icon name="qr" size={22} /> {scanning ? "Close the camera" : "Scan the customer's code"}
+              </button>
+              {scanning && (
+                <Scanner
+                  onCode={(code) => {
+                    setPayCode(code);
+                    setScanning(false);
+                  }}
+                />
+              )}
+              {data.recentCustomers.length > 0 && (
+                <fieldset style={{ border: 0, padding: 0, margin: "0.8rem 0 0" }}>
+                  <legend style={{ fontWeight: 700, marginBottom: "0.4rem" }}>Recent customers</legend>
+                  <div className="chips">
+                    {data.recentCustomers.map((c) => (
+                      <button key={c.payCode} type="button" className="chip" aria-pressed={payCode === c.payCode} onClick={() => setPayCode(c.payCode)}>
+                        {c.name} · {c.payCode}
+                      </button>
+                    ))}
+                  </div>
+                </fieldset>
+              )}
+              <label htmlFor="amount">Amount in {data.merchant.assetCode}</label>
+              <div className="money-input">
+                <span aria-hidden="true">{data.merchant.assetCode}</span>
+                <input
+                  id="amount"
+                  inputMode="decimal"
+                  autoComplete="off"
+                  required
+                  placeholder="0.00"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                />
+              </div>
+              {error && (
+                <div className="status bad" role="alert" style={{ marginTop: "1rem" }}>
+                  <p>{error.message}</p>
+                  {error.walletSaid && <p className="muted">The wallet said: {error.walletSaid}</p>}
+                </div>
+              )}
+              <button className="wide seller" disabled={busy} style={{ marginTop: "1rem" }}>
+                {busy ? "Sending the request…" : "Request payment"}
+              </button>
+            </form>
           )}
-          <button className="wide" onClick={reset}>
-            {view.status === "waiting" ? "Cancel and start a new request" : "New request"}
-          </button>
-        </section>
-      )}
-      {data && data.history.length > 0 && (
-        <section className="card" aria-labelledby="mhist-h">
-          <h2 id="mhist-h">Recent requests</h2>
-          <p className="muted">Requests made from this app, newest first. Your wallet&apos;s own transaction list is the full record.</p>
-          <ol className="history">
-            {data.history.map((h) => {
-              const good = h.status === "paid";
-              const label =
-                h.status === "paid"
-                  ? `Paid ${formatAmount(h.receiveAmount ?? h.requested)}`
-                  : h.status === "declined"
-                    ? "Customer said no"
-                    : h.status === "expired"
-                      ? "Ran out of time"
-                      : h.status === "failed"
-                        ? "Not paid"
-                        : "In progress";
-              return (
-                <li key={h.id} className={good ? "good" : "bad"}>
+
+          {data && !view && (
+            <aside className="card" aria-labelledby="how-h">
+              <h2 id="how-h">What the customer gets</h2>
+              <ol className="history">
+                <li className="wait">
                   <span className="mark" aria-hidden="true">
-                    {good ? "✓" : label === "In progress" ? "…" : "✕"}
+                    <Icon name="speaker" size={18} />
                   </span>
                   <div>
-                    <p className="title">
-                      {label}: asked {h.customerName} ({h.customerPayCode}) for {formatAmount(h.requested)}
-                    </p>
-                    <p className="muted">
-                      <time dateTime={h.at}>{new Date(h.at).toLocaleString(undefined, { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}</time>
-                      {h.reason ? `. ${h.reason}` : ""}
-                    </p>
+                    <p className="title">The request, read aloud</p>
+                    <p className="muted">With the exact amount their wallet will send.</p>
                   </div>
                 </li>
-              );
-            })}
-          </ol>
-        </section>
-      )}
-    </main>
+                <li className="wait">
+                  <span className="mark" aria-hidden="true">
+                    <Icon name="finger" size={18} />
+                  </span>
+                  <div>
+                    <p className="title">Their fingerprint approves it</p>
+                    <p className="muted">Nobody else can approve on their behalf.</p>
+                  </div>
+                </li>
+                <li className="wait">
+                  <span className="mark" aria-hidden="true">
+                    <Icon name="check" size={18} />
+                  </span>
+                  <div>
+                    <p className="title">You see it arrive</p>
+                    <p className="muted">This screen reads the amount from your own wallet.</p>
+                  </div>
+                </li>
+              </ol>
+            </aside>
+          )}
+
+          {view && (
+            <section className="card" aria-labelledby="req-h">
+              <h2 id="req-h">Request to customer {view.customerPayCode}</h2>
+              <div
+                ref={statusRef}
+                tabIndex={-1}
+                role="status"
+                aria-live="polite"
+                className={`status ${view.status === "received" ? "good" : view.status === "waiting" ? "wait" : "bad"}`}
+              >
+                <span className="status-icon">
+                  <Icon name={view.status === "received" ? "check" : view.status === "waiting" ? "clock" : "cross"} size={18} />
+                </span>
+                <p>
+                  {STATUS_TEXT[view.status]}
+                  {view.reason ? `. ${view.reason}` : ""}
+                </p>
+              </div>
+              <dl className="facts">
+                <dt>Asked for</dt>
+                <dd>{formatAmount(view.requested)}</dd>
+                <dt>Received, as reported by the wallet</dt>
+                <dd className="amount">{formatAmount(view.received)}</dd>
+              </dl>
+              {pollError && <p role="alert">Cannot check the wallet right now: {pollError.message} Still trying.</p>}
+              <button className="wide seller" onClick={reset}>
+                {view.status === "waiting" ? "Cancel and start a new request" : "New request"}
+              </button>
+            </section>
+          )}
+        </div>
+        {data && data.history.length > 0 && (
+          <section className="card" aria-labelledby="mhist-h">
+            <div className="card-head">
+              <span className="card-icon seller">
+                <Icon name="list" size={22} />
+              </span>
+              <h2 id="mhist-h">Recent requests</h2>
+            </div>
+            <p className="muted">Requests made from this app, newest first. Your wallet&apos;s own transaction list is the full record.</p>
+            <ol className="history">
+              {data.history.map((h) => {
+                const good = h.status === "paid";
+                const label =
+                  h.status === "paid"
+                    ? `Paid ${formatAmount(h.receiveAmount ?? h.requested)}`
+                    : h.status === "declined"
+                      ? "Customer said no"
+                      : h.status === "expired"
+                        ? "Ran out of time"
+                        : h.status === "failed"
+                          ? "Not paid"
+                          : "In progress";
+                return (
+                  <li key={h.id} className={good ? "good" : label === "In progress" ? "wait" : "bad"}>
+                    <span className="mark" aria-hidden="true">
+                      <Icon name={good ? "check" : label === "In progress" ? "clock" : "cross"} size={18} />
+                    </span>
+                    <div>
+                      <p className="title">
+                        {label}: asked {h.customerName} ({h.customerPayCode}) for {formatAmount(h.requested)}
+                      </p>
+                      <p className="muted">
+                        <time dateTime={h.at}>
+                          {new Date(h.at).toLocaleString(undefined, { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}
+                        </time>
+                        {h.reason ? `. ${h.reason}` : ""}
+                      </p>
+                    </div>
+                  </li>
+                );
+              })}
+            </ol>
+          </section>
+        )}
+      </main>
+    </>
   );
 }
 
