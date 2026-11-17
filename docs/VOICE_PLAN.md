@@ -50,3 +50,10 @@ interface ApprovalProvider {        // approves ONE payment
 - Browser speech recognition is not available inside Home Screen web apps. Record audio and send it to a provider instead.
 - Audio and microphone need a first user tap.
 - WebAuthn passkeys need HTTPS (Vercel provides it).
+
+## Built 17 Nov: answering by voice
+
+- After the request is read out, the app listens once for a short answer. Spitch hears Yoruba, Igbo and Hausa; ElevenLabs Scribe hears English and Pidgin; each backs up the other.
+- `src/lib/voice/intent.ts` maps the words to pay / refuse / unclear. Any "no" word refuses. Answers longer than five words are ignored, so the app's own voice picked up by the microphone cannot count as an answer.
+- "pay" never pays: it opens the fingerprint prompt. Without a fingerprint, a tap is still needed.
+- Inside the iPad app the whole thing starts without a tap. A website on iOS needs one tap before it may use the microphone or play sound.

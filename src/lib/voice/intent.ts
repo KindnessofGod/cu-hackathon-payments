@@ -1,6 +1,8 @@
 // Turns what the customer said into one of three answers. Voice never approves money: "pay" only
 // opens the fingerprint prompt, and the fingerprint approves. "no" refuses, which moves no money.
-// Anything unclear, or a sentence holding both a yes and a no word, is "unclear" and nothing happens.
+// Any "no" word makes the answer a refusal; anything without a yes or no word is "unclear" and nothing happens.
+// Only short answers count (MAX_WORDS): a long sentence is more likely the app's own voice picked up by
+// the microphone, or a sentence such as "you have never paid", than an answer.
 //
 // The non-English words were chosen by Claude and have NOT been checked by a native speaker.
 import type { Lang } from "./sentences";
@@ -16,20 +18,19 @@ const PAY: Record<Lang, string[]> = {
 };
 
 const REFUSE: Record<Lang, string[]> = {
-  en: ["no", "nope", "don't", "dont", "do not", "stop", "refuse", "cancel", "decline"],
-  pcm: ["no", "no pay", "abeg no", "no send", "stop", "cancel", "refuse"],
-  yo: ["rara", "ra ra", "ko", "mi o", "no"],
-  ig: ["mba", "ewoo", "no"],
-  ha: ["a'a", "aa", "a a", "babu", "kada", "no"],
+  en: ["no", "nope", "don't pay", "dont pay", "do not pay", "don't", "dont", "do not", "stop", "refuse", "cancel", "decline"],
+  pcm: ["no pay", "no", "abeg no", "no send", "no send am", "stop", "cancel", "refuse"],
+  yo: ["ma san", "rara", "ra ra", "ko", "mi o", "no"],
+  ig: ["akwula", "ekwula", "mba", "ewoo", "no"],
+  ha: ["kada ka biya", "a'a", "aa", "a a", "babu", "kada", "ba", "no"],
 };
 
 /** Lower case, accents and tone marks removed, punctuation turned into spaces (apostrophes kept). */
 export function normalise(text: string): string {
   return ` ${text
     .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
+    .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
-    .replace(/[ọ]/g, "o")
     .replace(/[^a-z0-9' ]+/g, " ")
     .replace(/\s+/g, " ")
     .trim()} `;
@@ -39,12 +40,14 @@ function has(heard: string, words: string[]): boolean {
   return words.some((w) => heard.includes(` ${w} `));
 }
 
+export const MAX_WORDS = 5;
+
 export function intentOf(text: string, lang: Lang): Intent {
   const heard = normalise(text);
-  // Check English words too: people mix languages.
-  const pay = has(heard, PAY[lang]) || has(heard, PAY.en);
-  const refuse = has(heard, REFUSE[lang]) || has(heard, REFUSE.en);
-  if (pay && !refuse) return "pay";
-  if (refuse && !pay) return "refuse";
+  if (heard.trim().split(" ").length > MAX_WORDS) return "unclear";
+  // Check English words too: people mix languages. Any "no" word wins, because refusing moves no
+  // money: "don't pay", "no pay" and "ba a biya ba" (Hausa, "not paid") are all refusals.
+  if (has(heard, REFUSE[lang]) || has(heard, REFUSE.en)) return "refuse";
+  if (has(heard, PAY[lang]) || has(heard, PAY.en)) return "pay";
   return "unclear";
 }

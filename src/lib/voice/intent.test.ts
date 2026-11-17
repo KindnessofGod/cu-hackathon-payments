@@ -7,9 +7,21 @@ describe("intentOf", () => {
     expect(intentOf("Yes, please.", "en")).toBe("pay");
     expect(intentOf("No.", "en")).toBe("refuse");
   });
-  it("treats a sentence with both as unclear, so nothing happens", () => {
-    expect(intentOf("Don't pay", "en")).toBe("unclear");
-    expect(intentOf("No, pay", "en")).toBe("unclear");
+  it("treats any no word as a refusal, since refusing moves no money", () => {
+    expect(intentOf("No, pay", "en")).toBe("refuse");
+    expect(intentOf("yes no", "en")).toBe("refuse");
+  });
+  it("hears a negative that contains the word pay as a refusal", () => {
+    expect(intentOf("Don't pay", "en")).toBe("refuse");
+    expect(intentOf("No pay am", "pcm")).toBe("refuse");
+    expect(intentOf("Má san", "yo")).toBe("refuse");
+    expect(intentOf("Kada ka biya", "ha")).toBe("refuse");
+    expect(intentOf("ba a biya ba", "ha")).toBe("refuse");
+  });
+  it("ignores long sentences, such as the app's own voice heard by the microphone", () => {
+    // Real transcripts from the live test of the app's own sentences (17 Nov).
+    expect(intentOf("New person wey you never pay before. Mama Chris, they ask for one dollar.", "pcm")).toBe("unclear");
+    expect(intentOf("sabon mutum da ba ka taɓa biya ba mama chris yana neman dala ɗaya", "ha")).toBe("unclear");
   });
   it("is unclear on silence or other words", () => {
     expect(intentOf("", "en")).toBe("unclear");
