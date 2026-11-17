@@ -21,6 +21,8 @@ Development only:
 
 The project was started from the `create-next-app` template (MIT) on 16 Nov 2026.
 
+Native iPad shell (`ios/`): Apple's own frameworks only (UIKit, WebKit, Security, LocalAuthentication). Built with XcodeGen (MIT) on GitHub Actions; installed with Sideloadly (third-party, free) on the owner's PC.
+
 ## Development tooling (not part of the app)
 `.claude/skills/` holds Matt Pocock's agent skills (https://github.com/mattpocock/skills, v1.3.2, commit 5863806, MIT licence, copied 16 Nov 2026). They are instructions for the AI coding assistant (planning, TDD, review). They are third-party prior work, are not shipped in the app and contain no application code.
 

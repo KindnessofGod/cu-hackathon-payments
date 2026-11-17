@@ -55,7 +55,8 @@ Code: `src/lib/op/real.ts` (the SDK calls), `src/lib/domain.ts` (the journey), `
 | "Stop everything" cancels the permission |  | yes | real test wallet |
 | Failure states: unknown pay code, bad amount, expired request, consent refused, over limit, wallet unreachable | yes (screens and handling) | failures triggered on the pretend wallet |  |
 | Approval tied to one quote and amount, single use | yes |  |  |
-| Fingerprint approval (WebAuthn passkey, Touch ID) | yes: once set up, every payment needs it and a tap alone is refused. Tested with Chrome's virtual authenticator; **not yet tried on the iPad** |  |  |
+| Fingerprint approval on the website (WebAuthn passkey, Touch ID) | yes: once set up, every payment needs it and a tap alone is refused. **Paid for real on the owner's iPad Air 3 with Touch ID** (17 Nov). iPadOS shows its own passkey sheet first; a website cannot skip it |  |  |
+| Native iPad app with instant Touch ID (`ios/`) | written: a thin native shell whose Secure Enclave key, usable only after Touch ID, signs each approval; the server verifies it. **Built in the cloud; not yet installed or tested on the iPad** |  |  |
 | Spoken read-back of requests, results and what is left | yes: ElevenLabs (English, Pidgin, Yoruba, Hausa) and Spitch (Igbo), with the device's English voice as fallback. Non-English wording **not yet checked by a native speaker** |  |  |
 | Spoken commands (speech input) |  |  | yes |
 | Pay code as QR, six digits, spoken aloud, lock-screen picture | yes |  |  |
@@ -98,6 +99,9 @@ npm test
 2. In Settings > Developer Keys, generate a key for each wallet address. Keep the downloaded `private.key` files out of git.
 3. Copy `.env.example` to `.env`, set `MOCK_OP=0`, and fill in the wallet addresses, key ids, keys and `APP_SECRET`.
 4. Run `npm run dev`.
+
+## The native iPad app (optional, for the live demo)
+The website is the prototype judges can reproduce. For the live demo there is also a small native iPad app in `ios/`, so the fingerprint is Apple's ordinary Touch ID prompt instead of the website passkey sheet. It is built without a Mac on GitHub's macOS runners (`.github/workflows/ios.yml`, unsigned) and installed with Sideloadly using a free Apple ID (the app then runs for 7 days). It loads the same hosted app; only the fingerprint step differs.
 
 ## Limitations
 - When the wallet refuses a payment over the limit it does not say why (HTTP 403 "unauthorized"). The app's "over your limit" explanation comes from its own record.
