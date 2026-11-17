@@ -54,7 +54,8 @@ Code: `src/lib/op/real.ts` (the SDK calls), `src/lib/domain.ts` (the journey), `
 | Wallet refuses a payment over the limit | yes, on the real test wallet (it answers 403 "unauthorized" without a reason; the app explains it from its own record) |  |  |
 | "Stop everything" cancels the permission |  | yes | real test wallet |
 | Failure states: unknown pay code, bad amount, expired request, consent refused, over limit, wallet unreachable | yes (screens and handling) | failures triggered on the pretend wallet |  |
-| Approval tied to one quote and amount, single use | yes (confirm action) |  | fingerprint passkey signing the same challenge |
+| Approval tied to one quote and amount, single use | yes |  |  |
+| Fingerprint approval (WebAuthn passkey, Touch ID) | yes: once set up, every payment needs it and a tap alone is refused. Tested with Chrome's virtual authenticator; **not yet tried on the iPad** |  |  |
 | Spoken read-back | placeholder: the device's built-in English voice |  | Spitch / ElevenLabs, Nigerian languages |
 | Pay code as QR, six digits, spoken aloud, lock-screen picture | yes |  |  |
 | Payment history on both apps, spoken summary for the customer | yes (payments through this app only) |  |  |
@@ -102,6 +103,8 @@ npm test
 - History shows only payments made through this app.
 - The consent page belongs to the wallet provider. We cannot restyle it, and its screen-reader accessibility is untested.
 - Approval needs the device unlocked. Nothing can approve money from a locked screen.
+- The fingerprint is any finger enrolled on the device. If someone else's finger is enrolled on the same iPad, they can approve too.
+- Once the fingerprint is on it cannot be turned off from the app, so someone holding the unlocked device cannot remove it. "Forget this device" starts over without the spending limit, which brings back the wallet's own consent page for every payment.
 - "Left of your limit" is our own record plus what the wallet reports after a payment. It is not an account balance; Open Payments has no balance endpoint.
 - Our server holds the spending permission (encrypted at rest). The limit caps what a breach or a trick could cost.
 - The app has no login. A device is recognised by a cookie set at setup.

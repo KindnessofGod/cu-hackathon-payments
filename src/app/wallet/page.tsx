@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, errorText, type ApiError } from "@/lib/client";
 import { formatAmount, speakAmount, type Amount } from "@/lib/money";
 import { BrowserSpeechOutput } from "@/lib/speech";
+import { startAuthentication, startRegistration } from "@simplewebauthn/browser";
 
 interface CapView {
   status: "active" | "stopped";
@@ -24,6 +25,7 @@ interface CustomerView {
   assetCode: string;
   assetScale: number;
   cap: CapView | null;
+  fingerprint: { id: string; transports?: string[]; createdAt: string }[];
 }
 
 interface RequestView {
@@ -36,6 +38,7 @@ interface RequestView {
   debitAmount?: Amount;
   receiveAmount?: Amount;
   challenge?: string;
+  deviceChallenge?: string;
   paid?: { debitAmount: Amount; receiveAmount: Amount; at: string };
   failure?: { kind: string; message: string; walletSaid?: string };
   expiresAt: string;
@@ -174,7 +177,7 @@ export default function WalletPage() {
   }
   if (!state.customer) return <Setup suggested={state.suggestedWalletAddress ?? ""} simulated={state.simulated} onDone={() => void refresh()} />;
 
-  if (pending) return <Approve key={pending.id} request={pending} say={say} onDone={finish} />;
+  if (pending) return <Approve key={pending.id} request={pending} fingerprint={state.customer.fingerprint} say={say} onDone={finish} />;
 
   return (
     <Home
@@ -246,7 +249,18 @@ function Setup({ suggested, simulated, onDone }: { suggested: string; simulated:
 
 // ---------- approving one request: the whole screen is one button ----------
 
-function Approve({ request, say, onDone }: { request: RequestView; say: (t: string) => void; onDone: (r: RequestView) => void }) {
+function Approve({
+  request,
+  fingerprint,
+  say,
+  onDone,
+}: {
+  request: RequestView;
+  fingerprint: CustomerView["fingerprint"];
+  say: (t: string) => void;
+  onDone: (r: RequestView) => void;
+}) {
+  const needsFinger = fingerprint.length > 0;
   const [armed, setArmed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -273,17 +287,41 @@ function Approve({ request, say, onDone }: { request: RequestView; say: (t: stri
     }
     if (!armed) {
       setArmed(true);
-      const text = `${sentence}${consentNote} Tap again to pay. To refuse, do nothing.`;
+      const text = needsFinger
+        ? `${sentence}${consentNote} To pay, tap again, then rest your finger on the Home button. To refuse, do nothing.`
+        : `${sentence}${consentNote} Tap again to pay. To refuse, do nothing.`;
       setMessage(text);
       say(text);
       return;
+    }
+    let proof: { method: "confirm-button" | "passkey"; challenge?: string; response?: unknown } = { method: "confirm-button", challenge: request.challenge };
+    if (needsFinger) {
+      // The device asks for the fingerprint here. Its signature covers this request's challenge only.
+      const ask = startAuthentication({
+        optionsJSON: {
+          challenge: request.deviceChallenge!,
+          rpId: window.location.hostname,
+          allowCredentials: fingerprint.map((f) => ({ id: f.id, type: "public-key" as const, transports: f.transports as AuthenticatorTransport[] | undefined })),
+          userVerification: "required",
+          timeout: 60000,
+        },
+      });
+      say("Rest your finger on the Home button.");
+      setMessage("Rest your finger on the Home button.");
+      try {
+        proof = { method: "passkey", challenge: request.challenge, response: await ask };
+      } catch {
+        setArmed(false);
+        const text = "Fingerprint not confirmed. Nothing was paid. Tap the screen to hear the request again.";
+        setMessage(text);
+        say(text);
+        return;
+      }
     }
     setBusy(true);
     setMessage("Paying. Please wait.");
     say("Paying. Please wait.");
     try {
-      // ApprovalProvider, today: a confirm action. Planned: a fingerprint passkey signing this same challenge.
-      const proof = { method: "confirm-button", challenge: request.challenge };
       const res = await api<{ request: RequestView; redirectUrl?: string }>(`/api/wallet/requests/${request.id}/approve`, { method: "POST", body: { proof } });
       if (res.redirectUrl) {
         setMessage("Opening your wallet's page to confirm this payment.");
@@ -308,7 +346,15 @@ function Approve({ request, say, onDone }: { request: RequestView; say: (t: stri
     }
   }
 
-  const instruction = !ready ? "Getting the exact amount from your wallet…" : busy ? "Paying. Please wait." : armed ? "Tap again to pay. To refuse, do nothing." : "Tap anywhere to hear this request.";
+  const instruction = !ready
+    ? "Getting the exact amount from your wallet…"
+    : busy
+      ? "Paying. Please wait."
+      : armed
+        ? needsFinger
+          ? "Tap again, then rest your finger on the Home button. To refuse, do nothing."
+          : "Tap again to pay. To refuse, do nothing."
+        : "Tap anywhere to hear this request.";
 
   return (
     <div className="takeover" role="dialog" aria-modal="true" aria-label="Payment request">
@@ -380,6 +426,8 @@ function Home(props: {
         </button>
         <LockScreenPicture payCode={customer.payCode} />
       </section>
+
+      <Fingerprint customer={customer} refresh={props.refresh} say={say} />
 
       <Limit cap={cap} customer={customer} refresh={props.refresh} say={say} setNotice={props.setNotice} />
 
@@ -633,6 +681,80 @@ function History({ items, say }: { items: HistoryItem[]; say: (t: string) => voi
             })}
           </ol>
         </>
+      )}
+    </section>
+  );
+}
+
+// ---------- fingerprint ----------
+
+type RegistrationOptions = Parameters<typeof startRegistration>[0]["optionsJSON"];
+
+function Fingerprint({ customer, refresh, say }: { customer: CustomerView; refresh: () => void; say: (t: string) => void }) {
+  const on = customer.fingerprint.length > 0;
+  const [options, setOptions] = useState<{ value: RegistrationOptions; at: number } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const supported = typeof window !== "undefined" && "PublicKeyCredential" in window;
+
+  // Fetch the setup options ahead of time, so the tap goes straight to the fingerprint prompt.
+  // (Safari only shows that prompt when it follows a tap directly.)
+  const load = useCallback(async () => {
+    try {
+      const { options: value } = await api<{ options: RegistrationOptions }>("/api/wallet/fingerprint");
+      setOptions({ value, at: Date.now() });
+    } catch (e) {
+      setError(errorText(e).message);
+    }
+  }, []);
+  useEffect(() => {
+    if (on || !supported) return;
+    void load();
+    const t = setInterval(() => void load(), 90_000);
+    return () => clearInterval(t);
+  }, [on, supported, load]);
+
+  async function setUp() {
+    if (!options) return;
+    setError(null);
+    const ask = startRegistration({ optionsJSON: options.value });
+    say("Rest your finger on the Home button.");
+    setBusy(true);
+    try {
+      const response = await ask;
+      await api("/api/wallet/fingerprint", { method: "POST", body: { response } });
+      say("Fingerprint is on. From now on, every payment needs your fingerprint.");
+      refresh();
+    } catch (e) {
+      setError(e instanceof Error && e.name === "NotAllowedError" ? "Fingerprint not confirmed. Try again." : errorText(e).message);
+      void load();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="card" aria-labelledby="fp-h">
+      <h2 id="fp-h">Fingerprint</h2>
+      {on ? (
+        <p>
+          <strong>On.</strong> Every payment needs your fingerprint on this device, so nobody else can approve a payment by tapping the screen. Set up on{" "}
+          {new Date(customer.fingerprint[0].createdAt).toLocaleDateString()}.
+        </p>
+      ) : !supported ? (
+        <p>This browser cannot use a fingerprint. Payments are approved with a second tap.</p>
+      ) : (
+        <>
+          <p>Use the fingerprint on this device to approve payments. Your fingerprint stays on the device; this app never sees it.</p>
+          <button className="wide" disabled={!options || busy} onClick={() => void setUp()}>
+            {busy ? "Waiting for your finger…" : options ? "Set up my fingerprint" : "Getting ready…"}
+          </button>
+        </>
+      )}
+      {error && (
+        <p role="alert" className="status bad">
+          {error}
+        </p>
       )}
     </section>
   );

@@ -1,12 +1,20 @@
 // What the two apps do, in one place. Route handlers call these; nothing here renders UI.
 import { randomInt } from "crypto";
-import { issueChallenge, verifyApproval, type ApprovalChallenge } from "./approval";
+import { challengeIsValid, issueChallenge, verifyApproval, type ApprovalChallenge, type ApprovalProof } from "./approval";
 import { makeInterval, periodEnd, periodKey, type Every } from "./interval";
 import { exceedsCap, formatAmount, parseMajor, remainingOfCap, type Amount } from "./money";
 import { gateway, isSimulated, OpError, type OpErrorKind, type QuoteInfo, type WalletInfo } from "./op";
 import { verifyInteractionHash } from "./op/hash";
 import { MOCK_HOST } from "./op/mock";
 import { normalizeWalletUrl } from "./op/real";
+import {
+  approvalChallengeForDevice,
+  finishRegistration,
+  registrationOptions,
+  verifyPasskeySignature,
+  type PendingRegistration,
+  type StoredPasskey,
+} from "./passkey";
 import { open, randomToken, seal, sha256 } from "./secret";
 import { getStore } from "./store";
 
@@ -49,6 +57,9 @@ export interface Customer {
   createdAt: string;
   cap?: Cap;
   contacts: Record<string, Contact>;
+  /** Fingerprint passkeys. Once one exists, every payment needs a fingerprint. */
+  passkeys?: StoredPasskey[];
+  passkeyRegistration?: PendingRegistration;
 }
 
 export type RequestStatus = "waiting" | "quoted" | "consent" | "paying" | "paid" | "declined" | "expired" | "failed";
@@ -464,7 +475,18 @@ export async function approveRequest(
 ): Promise<{ request: PaymentRequest; redirectUrl?: string }> {
   const r = await getRequestFor(customer, requestId);
   if (r.status !== "quoted" || !r.quote) throw new DomainError("wrong_state", r.failure?.message ?? "That request is no longer open.");
-  if (!verifyApproval(subjectOf(r), r.approval, proof)) {
+  if (customer.passkeys?.length) {
+    // A fingerprint is set up, so a tap alone is not enough.
+    const p = (proof && typeof proof === "object" ? proof : {}) as Partial<ApprovalProof>;
+    if (p.method !== "passkey" || !challengeIsValid(subjectOf(r), r.approval, p.challenge)) {
+      throw new DomainError("not_allowed", "This payment needs your fingerprint. Nothing was paid.");
+    }
+    const check = await verifyPasskeySignature({ baseUrl, approvalChallenge: r.approval!.challenge, passkeys: customer.passkeys, response: p.response });
+    if (!check.ok) throw new DomainError("not_allowed", "The fingerprint check did not match this payment. Nothing was paid.");
+    const used = customer.passkeys.find((k) => k.id === check.passkeyId);
+    if (used && typeof check.newCounter === "number") used.counter = check.newCounter;
+    await store().put("customers", customer.id, customer);
+  } else if (!verifyApproval(subjectOf(r), r.approval, proof)) {
     throw new DomainError("not_allowed", "The approval did not match this payment. Nothing was paid.");
   }
   r.approval = undefined; // an approval is used once
@@ -641,6 +663,7 @@ export function publicRequest(r: PaymentRequest, customer: Customer) {
     debitAmount: r.quote?.debitAmount,
     receiveAmount: r.quote?.receiveAmount,
     challenge: r.status === "quoted" ? r.approval?.challenge : undefined,
+    deviceChallenge: r.status === "quoted" && r.approval ? approvalChallengeForDevice(r.approval.challenge) : undefined,
     paid: r.paid,
     failure: r.failure,
     expiresAt: r.expiresAt,
@@ -656,5 +679,33 @@ export function publicCustomer(c: Customer) {
     assetCode: c.wallet.assetCode,
     assetScale: c.wallet.assetScale,
     cap: capSummary(c.cap),
+    fingerprint: (c.passkeys ?? []).map((p) => ({ id: p.id, transports: p.transports, createdAt: p.createdAt })),
   };
+}
+
+// ---------- wallet app: fingerprint ----------
+
+export async function startFingerprintSetup(customer: Customer, baseUrl: string) {
+  // Once set, it stays: otherwise someone holding the unlocked device could swap it out.
+  if (customer.passkeys?.length) throw new DomainError("wrong_state", "Your fingerprint is already set up.");
+  const { options, pending } = await registrationOptions({
+    baseUrl,
+    userId: customer.id,
+    userName: customer.wallet.publicName ?? "Pay Alone customer",
+    existing: customer.passkeys ?? [],
+  });
+  customer.passkeyRegistration = pending;
+  await store().put("customers", customer.id, customer);
+  return options;
+}
+
+export async function finishFingerprintSetup(customer: Customer, response: unknown, baseUrl: string) {
+  const passkey = await finishRegistration({ baseUrl, pending: customer.passkeyRegistration, response });
+  customer.passkeyRegistration = undefined;
+  if (!passkey) {
+    await store().put("customers", customer.id, customer);
+    throw new DomainError("not_allowed", "The fingerprint could not be set up. Please try again.");
+  }
+  customer.passkeys = [...(customer.passkeys ?? []), passkey];
+  await store().put("customers", customer.id, customer);
 }

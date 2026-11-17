@@ -4,7 +4,7 @@
 Claude (Anthropic) was used throughout: research and planning (claude.ai), and code generation (Claude Code). All AI-written code was reviewed and run by the team. Prompts and context documents are in `docs/`.
 
 ## Prior work
-No application code existed before the Sunday 15 Nov 2026 onboarding call. Before it, the team did research only (documents in `docs/`). A separate local voice-model experiment (Igbo, Yoruba, Hausa, English) was run on 15 Nov on the owner's PC; its results are not yet in this repo. If any code from it is reused, list it here.
+No application code existed before the Sunday 15 Nov 2026 onboarding call. Before it, the team did research only (documents in `docs/`). A separate voice feasibility test (English, Pidgin, Yoruba, Igbo, Hausa) was built on 15 Nov in the owner's repo https://github.com/KindnessofGod/ai-voice-demo. Its findings inform `docs/VOICE_PLAN.md`; none of its code is in this repo yet. If any code from it is reused, list it here.
 
 ## Dependencies and licences
 Runtime:
@@ -13,6 +13,7 @@ Runtime:
 - `qrcode` 1.5.4 (MIT): draws the pay code QR.
 - `jsqr` 1.4.0 (Apache-2.0): reads the pay code QR from the seller's camera.
 - `pg` 8.23.1 (MIT): Postgres driver for the deployed store.
+- `@simplewebauthn/server` 14.1.0 and `@simplewebauthn/browser` 14.0.0 (MIT): fingerprint (passkey) setup and checks.
 
 Development only:
 - `typescript` (Apache-2.0), `vitest` (MIT), `eslint` and `eslint-config-next` (MIT), type packages (MIT).

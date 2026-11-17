@@ -13,6 +13,8 @@
   },
   "dependencies": {
     "@interledger/open-payments": "^7.4.0",
+    "@simplewebauthn/browser": "^14.0.0",
+    "@simplewebauthn/server": "^14.1.0",
     "jsqr": "^1.4.0",
     "next": "16.4.6",
     "pg": "^8.23.1",

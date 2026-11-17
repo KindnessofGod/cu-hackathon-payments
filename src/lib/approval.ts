@@ -1,7 +1,8 @@
 // Approval of ONE payment. A payment cannot be created without a proof for that exact quote and amount.
 //
-// Today the proof comes from a confirm action on the screen ("confirm-button").
-// Planned: a WebAuthn passkey (fingerprint) that signs the same challenge. Only `verify` changes then.
+// Two kinds of proof:
+//   "passkey"         the device's fingerprint (Touch ID) signs the challenge. Required once the customer has set one up.
+//   "confirm-button"  a second tap on the screen. Only accepted while no fingerprint is set up.
 import { randomToken, sign } from "./secret";
 
 export interface ApprovalChallenge {
@@ -10,8 +11,9 @@ export interface ApprovalChallenge {
 }
 
 export interface ApprovalProof {
-  method: "confirm-button";
+  method: "confirm-button" | "passkey";
   challenge: string;
+  response?: unknown; // WebAuthn assertion, for "passkey"
 }
 
 export interface ApprovalSubject {
@@ -34,13 +36,17 @@ export function issueChallenge(subject: ApprovalSubject, now = Date.now()): Appr
   return { challenge: `${nonce}.${binding(subject, nonce, expiresAt)}`, expiresAt };
 }
 
-/** True only if the proof was issued for this exact request, quote and amount and has not expired. */
-export function verifyApproval(subject: ApprovalSubject, issued: ApprovalChallenge | undefined, proof: unknown, now = Date.now()): boolean {
-  if (!issued || !proof || typeof proof !== "object") return false;
-  const p = proof as Partial<ApprovalProof>;
-  if (p.method !== "confirm-button" || typeof p.challenge !== "string") return false;
-  if (p.challenge !== issued.challenge) return false;
+/** True only if the challenge was issued for this exact request, quote and amount and has not expired. */
+export function challengeIsValid(subject: ApprovalSubject, issued: ApprovalChallenge | undefined, challenge: unknown, now = Date.now()): boolean {
+  if (!issued || typeof challenge !== "string" || challenge !== issued.challenge) return false;
   if (Date.parse(issued.expiresAt) < now) return false;
   const [nonce, mac] = issued.challenge.split(".");
   return Boolean(nonce && mac) && mac === binding(subject, nonce, issued.expiresAt);
+}
+
+/** The on-screen confirm proof. The fingerprint proof is checked in passkey.ts on top of challengeIsValid. */
+export function verifyApproval(subject: ApprovalSubject, issued: ApprovalChallenge | undefined, proof: unknown, now = Date.now()): boolean {
+  if (!proof || typeof proof !== "object") return false;
+  const p = proof as Partial<ApprovalProof>;
+  return p.method === "confirm-button" && challengeIsValid(subject, issued, p.challenge, now);
 }

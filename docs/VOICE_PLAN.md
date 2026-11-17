@@ -1,9 +1,25 @@
 # Voice plan (planned, not built yet)
 
-## Decision from the owner's own tests (16 Nov 2026)
-The owner ran a local experiment on his PC (Igbo, Yoruba, Hausa, English). Result in his words: local models were rough; **Spitch and ElevenLabs worked far better** and are the choice for the project. The experiment's files stayed on his PC and were not uploaded, so the detailed numbers are not in this repo. When he turns the PC on, the results (`Documents/voice-test`: `LOG.md`, results table, recommendation) should be pushed here under `docs/voice-experiment/` (no API keys).
+## Findings from the owner's voice test (repo KindnessofGod/ai-voice-demo, 15 Nov 2026)
+All its tests used synthetic voices plus public recordings (FLEURS); no real person has spoken a command yet.
 
-Both services need API keys. Keys live in environment variables on the server only, never in the browser or git. Cost and free-credit limits were not confirmed; check before relying on them.
+- **People say amounts in English** inside Yoruba, Igbo and Hausa sentences. With English amounts, ElevenLabs heard 9 of 10 requests fully right; with native number words, Yoruba and Igbo amounts mostly failed.
+- **Hearing (speech to text):** ElevenLabs Scribe v3 is best overall on real speech (words wrong: Yoruba 24%, Igbo 22%, Hausa 17%) and writes amounts as digits. Spitch: Hausa 14%, Yoruba 38%, Igbo 33%, and once heard "twenty thousand five hundred" as 2,500.
+- **Speaking (text to speech):** ElevenLabs Eleven v4 for English, Pidgin, Yoruba, Hausa. It rejects Igbo, so Igbo is spoken by Spitch. Spitch has no Pidgin voice.
+- **Local models:** too slow on a CPU (NaijaVox 30 to 100 s per phrase), or weak, or non-commercial. Not for the demo.
+- **Short words fail everywhere:** "yes", "no", "stop" are often misheard, and so are long names.
+- **Safety that held:** 0 wrong payments slipped through in 165+ recognitions, because of read-back, saved contacts only, refusing half-heard numbers, and requiring the amount to be said again instead of a bare "yes".
+- **Cost and network:** about 2 US cents per conversation with ElevenLabs. Hosted calls took 3 to 7 s on a good connection and 40 to 180 s on a bad one. The ElevenLabs free plan is non-commercial.
+- **Not checked:** every non-English sentence was written by Claude and needs a native speaker.
+
+## What this means for Pay Alone
+- Our design avoids the weakest part of their results. Money is approved by **fingerprint**, and amounts come from the **quote**, so speech recognition is never in the money path: no "yes", no spoken amounts, no spoken names.
+- So voice **output** is what matters for the demo, and voice **input** can stay planned.
+- Planned integration (not built):
+  1. A server route `/api/voice/speak` takes a sentence id and language. The server builds the sentence itself from the quote (never from text sent by the browser), picks Spitch for Igbo and ElevenLabs for the rest, and returns audio. Keys stay in Vercel environment variables.
+  2. A 4-second timeout, then fall back to the device's built-in voice, so a slow network never leaves the user in silence.
+  3. Amounts read in English inside the native sentence, matching how people speak.
+  4. Later, voice input only for safe commands ("what did I spend this week", "stop everything"), each confirmed before acting.
 
 ## What to build in the core demo (the seams only)
 ```ts
