@@ -15,6 +15,7 @@ import {
   type PendingRegistration,
   type StoredPasskey,
 } from "./passkey";
+import { spkiFromX963, verifyDeviceSignature, type StoredDeviceKey } from "./devicekey";
 import { open, randomToken, seal, sha256 } from "./secret";
 import { getStore } from "./store";
 
@@ -60,6 +61,13 @@ export interface Customer {
   /** Fingerprint passkeys. Once one exists, every payment needs a fingerprint. */
   passkeys?: StoredPasskey[];
   passkeyRegistration?: PendingRegistration;
+  /** Secure Enclave keys from the native iPad app (ios/). Count as a fingerprint too. */
+  deviceKeys?: StoredDeviceKey[];
+  deviceKeyChallenge?: { challenge: string; expiresAt: string };
+}
+
+function hasFingerprint(c: Customer): boolean {
+  return Boolean(c.passkeys?.length || c.deviceKeys?.length);
 }
 
 export type RequestStatus = "waiting" | "quoted" | "consent" | "paying" | "paid" | "declined" | "expired" | "failed";
@@ -475,17 +483,22 @@ export async function approveRequest(
 ): Promise<{ request: PaymentRequest; redirectUrl?: string }> {
   const r = await getRequestFor(customer, requestId);
   if (r.status !== "quoted" || !r.quote) throw new DomainError("wrong_state", r.failure?.message ?? "That request is no longer open.");
-  if (customer.passkeys?.length) {
+  if (hasFingerprint(customer)) {
     // A fingerprint is set up, so a tap alone is not enough.
-    const p = (proof && typeof proof === "object" ? proof : {}) as Partial<ApprovalProof>;
-    if (p.method !== "passkey" || !challengeIsValid(subjectOf(r), r.approval, p.challenge)) {
+    const p = (proof && typeof proof === "object" ? proof : {}) as Partial<ApprovalProof> & { signature?: unknown };
+    if ((p.method !== "passkey" && p.method !== "device-key") || !challengeIsValid(subjectOf(r), r.approval, p.challenge)) {
       throw new DomainError("not_allowed", "This payment needs your fingerprint. Nothing was paid.");
     }
-    const check = await verifyPasskeySignature({ baseUrl, approvalChallenge: r.approval!.challenge, passkeys: customer.passkeys, response: p.response });
-    if (!check.ok) throw new DomainError("not_allowed", "The fingerprint check did not match this payment. Nothing was paid.");
-    const used = customer.passkeys.find((k) => k.id === check.passkeyId);
-    if (used && typeof check.newCounter === "number") used.counter = check.newCounter;
-    await store().put("customers", customer.id, customer);
+    if (p.method === "device-key") {
+      const ok = (customer.deviceKeys ?? []).some((k) => verifyDeviceSignature(k.spki, r.approval!.challenge, p.signature));
+      if (!ok) throw new DomainError("not_allowed", "The fingerprint check did not match this payment. Nothing was paid.");
+    } else {
+      const check = await verifyPasskeySignature({ baseUrl, approvalChallenge: r.approval!.challenge, passkeys: customer.passkeys ?? [], response: p.response });
+      if (!check.ok) throw new DomainError("not_allowed", "The fingerprint check did not match this payment. Nothing was paid.");
+      const used = customer.passkeys?.find((k) => k.id === check.passkeyId);
+      if (used && typeof check.newCounter === "number") used.counter = check.newCounter;
+      await store().put("customers", customer.id, customer);
+    }
   } else if (!verifyApproval(subjectOf(r), r.approval, proof)) {
     throw new DomainError("not_allowed", "The approval did not match this payment. Nothing was paid.");
   }
@@ -679,7 +692,10 @@ export function publicCustomer(c: Customer) {
     assetCode: c.wallet.assetCode,
     assetScale: c.wallet.assetScale,
     cap: capSummary(c.cap),
-    fingerprint: (c.passkeys ?? []).map((p) => ({ id: p.id, transports: p.transports, createdAt: p.createdAt })),
+    fingerprint: [
+      ...(c.passkeys ?? []).map((p) => ({ kind: "passkey" as const, id: p.id, transports: p.transports, createdAt: p.createdAt })),
+      ...(c.deviceKeys ?? []).map((k) => ({ kind: "device" as const, id: k.id, createdAt: k.createdAt })),
+    ],
   };
 }
 
@@ -687,7 +703,7 @@ export function publicCustomer(c: Customer) {
 
 export async function startFingerprintSetup(customer: Customer, baseUrl: string) {
   // Once set, it stays: otherwise someone holding the unlocked device could swap it out.
-  if (customer.passkeys?.length) throw new DomainError("wrong_state", "Your fingerprint is already set up.");
+  if (hasFingerprint(customer)) throw new DomainError("wrong_state", "Your fingerprint is already set up.");
   const { options, pending } = await registrationOptions({
     baseUrl,
     userId: customer.id,
@@ -707,5 +723,28 @@ export async function finishFingerprintSetup(customer: Customer, response: unkno
     throw new DomainError("not_allowed", "The fingerprint could not be set up. Please try again.");
   }
   customer.passkeys = [...(customer.passkeys ?? []), passkey];
+  await store().put("customers", customer.id, customer);
+}
+
+/** Native app setup, step 1: a challenge the app must sign with its new key (Touch ID prompt). */
+export async function startDeviceKeySetup(customer: Customer) {
+  if (hasFingerprint(customer)) throw new DomainError("wrong_state", "Your fingerprint is already set up.");
+  const challenge = `setup.${randomToken(24)}`;
+  customer.deviceKeyChallenge = { challenge, expiresAt: new Date(Date.now() + 2 * 60_000).toISOString() };
+  await store().put("customers", customer.id, customer);
+  return challenge;
+}
+
+/** Native app setup, step 2: save the public key once the app proves it can sign with it. */
+export async function finishDeviceKeySetup(customer: Customer, publicKey: unknown, signature: unknown) {
+  const pending = customer.deviceKeyChallenge;
+  customer.deviceKeyChallenge = undefined;
+  if (hasFingerprint(customer)) throw new DomainError("wrong_state", "Your fingerprint is already set up.");
+  const spki = typeof publicKey === "string" ? spkiFromX963(publicKey) : null;
+  if (!pending || Date.parse(pending.expiresAt) < Date.now() || !spki || !verifyDeviceSignature(spki, pending.challenge, signature)) {
+    await store().put("customers", customer.id, customer);
+    throw new DomainError("not_allowed", "The fingerprint could not be set up. Please try again.");
+  }
+  customer.deviceKeys = [{ id: sha256(spki).slice(0, 16), spki, createdAt: new Date().toISOString() }];
   await store().put("customers", customer.id, customer);
 }

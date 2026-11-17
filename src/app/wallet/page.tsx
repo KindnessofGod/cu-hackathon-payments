@@ -6,6 +6,7 @@ import { api, errorText, type ApiError } from "@/lib/client";
 import { formatAmount, speakAmount, type Amount } from "@/lib/money";
 import { BrowserSpeechOutput, HostedSpeechOutput } from "@/lib/speech";
 import { startAuthentication, startRegistration } from "@simplewebauthn/browser";
+import { inNativeApp, nativeCreateKey, nativeSign } from "@/lib/native";
 
 interface CapView {
   status: "active" | "stopped";
@@ -25,7 +26,7 @@ interface CustomerView {
   assetCode: string;
   assetScale: number;
   cap: CapView | null;
-  fingerprint: { id: string; transports?: string[]; createdAt: string }[];
+  fingerprint: { kind: "passkey" | "device"; id: string; transports?: string[]; createdAt: string }[];
 }
 
 interface RequestView {
@@ -349,44 +350,53 @@ function Approve({
       say(sentence);
       return;
     }
-    if (!armed) {
-      setArmed(true);
-      // The request in the chosen language and voice, then the instruction in English.
-      sayOurs({ what: "asking", id: request.id }, sentence);
-      const text = needsFinger
-        ? `${sentence}${consentNote} To pay, tap again, then rest your finger on the Home button. To refuse, do nothing.`
-        : `${sentence}${consentNote} Tap again to pay. To refuse, do nothing.`;
-      setMessage(text);
-      setTimeout(() => say(needsFinger ? "To pay, tap again, then rest your finger on the Home button." : "Tap again to pay."), 9000);
-      return;
-    }
-    let proof: { method: "confirm-button" | "passkey"; challenge?: string; response?: unknown } = { method: "confirm-button", challenge: request.challenge };
+    let proof: { method: "confirm-button" | "passkey" | "device-key"; challenge?: string; response?: unknown; signature?: string } = {
+      method: "confirm-button",
+      challenge: request.challenge,
+    };
     if (needsFinger) {
-      // The device asks for the fingerprint here. Its signature covers this request's challenge only.
-      const ask = startAuthentication({
-        optionsJSON: {
-          challenge: request.deviceChallenge!,
-          rpId: window.location.hostname,
-          allowCredentials: fingerprint.map((f) => ({
-            id: f.id,
-            type: "public-key" as const,
-            transports: f.transports as AuthenticatorTransport[] | undefined,
-          })),
-          userVerification: "required",
-          timeout: 60000,
-        },
-      });
-      say("Rest your finger on the Home button.");
-      setMessage("Rest your finger on the Home button.");
-      try {
-        proof = { method: "passkey", challenge: request.challenge, response: await ask };
-      } catch {
-        setArmed(false);
-        const text = "Fingerprint not confirmed. Nothing was paid. Tap the screen to hear the request again.";
+      // One tap: the request is read out and the fingerprint is asked for at the same time.
+      // The fingerprint signs this request's challenge only, so it cannot pay anything else.
+      const useNative = inNativeApp() && fingerprint.some((f) => f.kind === "device");
+      const passkeys = fingerprint.filter((f) => f.kind === "passkey");
+      if (!useNative && passkeys.length === 0) {
+        const text = "Your fingerprint is set up in the Pay Alone app. Open the app on this iPad to approve.";
         setMessage(text);
         say(text);
         return;
       }
+      const ask = useNative
+        ? nativeSign(request.challenge!, `Pay ${formatAmount(request.debitAmount!)} to ${request.merchantName}`)
+        : startAuthentication({
+            optionsJSON: {
+              challenge: request.deviceChallenge!,
+              rpId: window.location.hostname,
+              allowCredentials: passkeys.map((f) => ({ id: f.id, type: "public-key" as const, transports: f.transports as AuthenticatorTransport[] | undefined })),
+              userVerification: "required",
+              timeout: 60000,
+            },
+          });
+      setArmed(true);
+      sayOurs({ what: "asking", id: request.id }, `${sentence} To pay, rest your finger on the Home button.`);
+      setMessage(`${sentence}${consentNote} To pay, rest your finger on the Home button. To refuse, do nothing.`);
+      try {
+        const result = await ask;
+        proof = useNative
+          ? { method: "device-key", challenge: request.challenge, signature: result as string }
+          : { method: "passkey", challenge: request.challenge, response: result };
+      } catch {
+        setArmed(false);
+        const text = "Not paid. Your fingerprint was not confirmed. Tap the screen to try again.";
+        setMessage(text);
+        say(text);
+        return;
+      }
+    } else if (!armed) {
+      setArmed(true);
+      sayOurs({ what: "asking", id: request.id }, sentence);
+      setMessage(`${sentence}${consentNote} Tap again to pay. To refuse, do nothing.`);
+      setTimeout(() => say("Tap again to pay."), 9000);
+      return;
     }
     setBusy(true);
     setMessage("Paying. Please wait.");
@@ -422,9 +432,11 @@ function Approve({
       ? "Paying. Please wait."
       : armed
         ? needsFinger
-          ? "Tap again, then rest your finger on the Home button. To refuse, do nothing."
+          ? "Rest your finger on the Home button to pay."
           : "Tap again to pay. To refuse, do nothing."
-        : "Tap anywhere to hear this request.";
+        : needsFinger
+          ? "Tap anywhere, then rest your finger on the Home button."
+          : "Tap anywhere to hear this request.";
 
   return (
     <div className="takeover" role="dialog" aria-modal="true" aria-label="Payment request">
@@ -855,7 +867,8 @@ function Fingerprint({ customer, refresh, say }: { customer: CustomerView; refre
   const [options, setOptions] = useState<{ value: RegistrationOptions; at: number } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const supported = typeof window !== "undefined" && "PublicKeyCredential" in window;
+  const native = typeof window !== "undefined" && inNativeApp();
+  const supported = native || (typeof window !== "undefined" && "PublicKeyCredential" in window);
 
   // Fetch the setup options ahead of time, so the tap goes straight to the fingerprint prompt.
   // (Safari only shows that prompt when it follows a tap directly.)
@@ -868,13 +881,34 @@ function Fingerprint({ customer, refresh, say }: { customer: CustomerView; refre
     }
   }, []);
   useEffect(() => {
-    if (on || !supported) return;
+    if (on || !supported || native) return;
     void load();
     const t = setInterval(() => void load(), 90_000);
     return () => clearInterval(t);
-  }, [on, supported, load]);
+  }, [on, supported, native, load]);
+
+  async function setUpNative() {
+    // Native iPad app: a Secure Enclave key that only works after Touch ID. Signing the setup
+    // challenge shows the Touch ID prompt once and proves the key works before it is saved.
+    setError(null);
+    setBusy(true);
+    say("Rest your finger on the Home button.");
+    try {
+      const { challenge } = await api<{ challenge: string }>("/api/wallet/devicekey");
+      const publicKey = await nativeCreateKey();
+      const signature = await nativeSign(challenge, "Turn on fingerprint approval for Pay Alone");
+      await api("/api/wallet/devicekey", { method: "POST", body: { publicKey, signature } });
+      say("Fingerprint is on. From now on, every payment needs your fingerprint.");
+      refresh();
+    } catch (e) {
+      setError(e instanceof Error && !(e as { error?: unknown }).error ? "Fingerprint not confirmed. Try again." : errorText(e).message);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function setUp() {
+    if (native) return setUpNative();
     if (!options) return;
     setError(null);
     const ask = startRegistration({ optionsJSON: options.value });
@@ -911,8 +945,8 @@ function Fingerprint({ customer, refresh, say }: { customer: CustomerView; refre
       ) : (
         <>
           <p>Use the fingerprint on this device to approve payments. Your fingerprint stays on the device; this app never sees it.</p>
-          <button className="wide" disabled={!options || busy} onClick={() => void setUp()}>
-            <Icon name="finger" size={22} /> {busy ? "Waiting for your finger…" : options ? "Set up my fingerprint" : "Getting ready…"}
+          <button className="wide" disabled={(!native && !options) || busy} onClick={() => void setUp()}>
+            <Icon name="finger" size={22} /> {busy ? "Waiting for your finger…" : native || options ? "Set up my fingerprint" : "Getting ready…"}
           </button>
         </>
       )}

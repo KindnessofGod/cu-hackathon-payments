@@ -15,3 +15,7 @@ private*.key
 *.tsbuildinfo
 next-env.d.ts
 .data/
+ios/build/
+ios/*.xcodeproj/
+ios/Payload/
+ios/*.ipa

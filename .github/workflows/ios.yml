@@ -1,0 +1,36 @@
+name: iPad app (unsigned build)
+
+on:
+  workflow_dispatch:
+  push:
+    paths: ["ios/**", ".github/workflows/ios.yml"]
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate the Xcode project
+        working-directory: ios
+        run: xcodegen generate
+      - name: Build for iPad (no signing; Sideloadly signs it on the owner's PC)
+        working-directory: ios
+        run: |
+          set -o pipefail
+          xcodebuild -project PayAlone.xcodeproj -target PayAlone -configuration Release -sdk iphoneos \
+            SYMROOT="$PWD/build" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build | tail -40
+      - name: Package as .ipa
+        working-directory: ios
+        run: |
+          mkdir -p Payload
+          cp -R build/Release-iphoneos/PayAlone.app Payload/
+          zip -qry PayAlone.ipa Payload
+          ls -la PayAlone.ipa
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PayAlone-ipad-unsigned
+          path: ios/PayAlone.ipa
+          retention-days: 14

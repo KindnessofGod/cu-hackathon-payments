@@ -1,7 +1,9 @@
 // Approval of ONE payment. A payment cannot be created without a proof for that exact quote and amount.
 //
 // Two kinds of proof:
-//   "passkey"         the device's fingerprint (Touch ID) signs the challenge. Required once the customer has set one up.
+//   "passkey"         the device's fingerprint (Touch ID) signs the challenge via a website passkey.
+//   "device-key"      the native iPad app's Secure Enclave key signs it after Touch ID (see devicekey.ts).
+//   One of these two is required once the customer has set up a fingerprint.
 //   "confirm-button"  a second tap on the screen. Only accepted while no fingerprint is set up.
 import { randomToken, sign } from "./secret";
 
@@ -11,7 +13,7 @@ export interface ApprovalChallenge {
 }
 
 export interface ApprovalProof {
-  method: "confirm-button" | "passkey";
+  method: "confirm-button" | "passkey" | "device-key";
   challenge: string;
   response?: unknown; // WebAuthn assertion, for "passkey"
 }
