@@ -21,6 +21,7 @@ describe("intentOf", () => {
   it("ignores long sentences, such as the app's own voice heard by the microphone", () => {
     // Real transcripts from the live test of the app's own sentences (17 Nov).
     expect(intentOf("New person wey you never pay before. Mama Chris, they ask for one dollar.", "pcm")).toBe("unclear");
+    expect(intentOf("A new person you have never paid called Mama Chris is asking for one dollar.", "en")).toBe("unclear");
     expect(intentOf("sabon mutum da ba ka taɓa biya ba mama chris yana neman dala ɗaya", "ha")).toBe("unclear");
   });
   it("is unclear on silence or other words", () => {
@@ -40,5 +41,24 @@ describe("intentOf", () => {
   it("accepts English words inside another language", () => {
     expect(intentOf("pay", "ig")).toBe("pay");
     expect(intentOf("no", "yo")).toBe("refuse");
+  });
+  it("hears questions, which only make the app answer", () => {
+    expect(intentOf("Who is this?", "en")).toBe("who");
+    expect(intentOf("How much is left?", "en")).toBe("left");
+    expect(intentOf("What is my balance", "en")).toBe("left");
+    expect(intentOf("Say that again", "en")).toBe("repeat");
+    expect(intentOf("What?", "en")).toBe("repeat");
+    expect(intentOf("Help", "en")).toBe("help");
+    expect(intentOf("Na who?", "pcm")).toBe("who");
+    expect(intentOf("How much remain?", "pcm")).toBe("left");
+    expect(intentOf("Ta ni?", "yo")).toBe("who");
+    expect(intentOf("Èló ló kù?", "yo")).toBe("left");
+    expect(intentOf("Onye bụ ya?", "ig")).toBe("who");
+    expect(intentOf("Kwuo ya ọzọ", "ig")).toBe("repeat");
+    expect(intentOf("Wanene?", "ha")).toBe("who");
+    expect(intentOf("Nawa ya rage?", "ha")).toBe("left");
+  });
+  it("lets a question win over no, since a question changes nothing", () => {
+    expect(intentOf("No wait, who is it?", "en")).toBe("who");
   });
 });

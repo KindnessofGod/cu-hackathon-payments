@@ -20,6 +20,14 @@ interface Words {
   notPaid: string;
   left: (left: string, limit: string) => string;
   answer: string;
+  /** Short reminder after each reply. */
+  again: string;
+  who: (name: string, times: number) => string;
+  noLimit: string;
+  afterThis: (left: string) => string;
+  over: string;
+  help: string;
+  unclear: string;
 }
 
 const W: Record<Lang, Words> = {
@@ -30,6 +38,13 @@ const W: Record<Lang, Words> = {
     notPaid: "Not paid. No money moved.",
     left: (l, lim) => `${l} is left of your limit of ${lim}.`,
     answer: "To pay, say pay. To refuse, say no.",
+    again: "Say pay, or no.",
+    who: (n, t) => (t > 0 ? `This is ${n}. You have paid them ${t === 1 ? "once" : `${t} times`} before.` : `This is ${n}. You have never paid this person before.`),
+    noLimit: "You have no spending limit set, so your wallet will ask you on its own page.",
+    afterThis: (l) => `If you pay, ${l} will be left.`,
+    over: "This payment is more than what is left, so your wallet will refuse it.",
+    help: "You can ask who is this, how much is left, or say again. To pay, say pay. To refuse, say no.",
+    unclear: "Sorry, I did not catch that.",
   },
   pcm: {
     newPerson: (n) => `New person wey you never pay before, ${n},`,
@@ -38,6 +53,13 @@ const W: Record<Lang, Words> = {
     notPaid: "E no pay. No money move.",
     left: (l, lim) => `${l} remain for your limit of ${lim}.`,
     answer: "If you wan pay, talk pay. If you no want, talk no.",
+    again: "Talk pay, or no.",
+    who: (n, t) => (t > 0 ? `Na ${n}. You don pay am before.` : `Na ${n}. You never pay this person before.`),
+    noLimit: "You never set limit, so your wallet go ask you for im own page.",
+    afterThis: (l) => `If you pay, ${l} go remain.`,
+    over: "This payment pass wetin remain, so your wallet no go gree.",
+    help: "You fit ask who be this, how much remain, or make I talk am again. To pay, talk pay. To refuse, talk no.",
+    unclear: "Sorry, I no hear you well.",
   },
   yo: {
     newPerson: (n) => `Ẹni tuntun tí o kò sanwó fún rí, ${n},`,
@@ -46,6 +68,13 @@ const W: Record<Lang, Words> = {
     notPaid: "A kò san án. Kò sí owó tó jáde.",
     left: (l, lim) => `${l} ló kù nínú òdiwọ̀n ${lim} rẹ.`,
     answer: "Láti sanwó, sọ pé san. Láti kọ̀, sọ pé rárá.",
+    again: "Sọ pé san, tàbí rárá.",
+    who: (n, t) => (t > 0 ? `${n} ni. O ti sanwó fún wọn rí.` : `${n} ni. O kò tíì sanwó fún ẹni yìí rí.`),
+    noLimit: "O kò tíì ṣètò òdiwọ̀n, nítorí náà àpamọ́wọ́ rẹ yóò béèrè lọ́wọ́ rẹ.",
+    afterThis: (l) => `Tí o bá san án, ${l} ni yóò kù.`,
+    over: "Owó yìí ju èyí tó kù lọ, nítorí náà àpamọ́wọ́ rẹ yóò kọ̀ ọ́.",
+    help: "O lè béèrè ta ni, èló ló kù, tàbí kí n tún un sọ. Láti sanwó, sọ pé san. Láti kọ̀, sọ pé rárá.",
+    unclear: "Ẹ má bínú, mi ò gbọ́ yín dáadáa.",
   },
   ig: {
     newPerson: (n) => `Onye ọhụrụ ị na-akwụbeghị ụgwọ, ${n},`,
@@ -54,6 +83,13 @@ const W: Record<Lang, Words> = {
     notPaid: "Akwụghị ụgwọ. Ego ọ bụla esighị pụọ.",
     left: (l, lim) => `${l} fọdụrụ n'oke ${lim} gị.`,
     answer: "Ka ị kwụọ ụgwọ, kwuo kwụọ. Ka ị jụ, kwuo mba.",
+    again: "Kwuo kwụọ, ma ọ bụ mba.",
+    who: (n, t) => (t > 0 ? `Ọ bụ ${n}. Ị kwụọla onye a ụgwọ na mbụ.` : `Ọ bụ ${n}. Ị kwụbeghị onye a ụgwọ.`),
+    noLimit: "Ị setịghị oke, ya mere obere akpa gị ga-ajụ gị.",
+    afterThis: (l) => `Ọ bụrụ na ị kwụọ, ${l} ga-afọdụ.`,
+    over: "Ego a karịrị nke fọdụrụ, ya mere obere akpa gị ga-ajụ ya.",
+    help: "Ị nwere ike ịjụ onye bụ ya, ego ole fọdụrụ, ma ọ bụ ka m kwuo ya ọzọ. Ka ị kwụọ, kwuo kwụọ. Ka ị jụ, kwuo mba.",
+    unclear: "Ndo, anụghị m gị nke ọma.",
   },
   ha: {
     newPerson: (n) => `Sabon mutum da ba ka taɓa biya ba, ${n},`,
@@ -62,6 +98,13 @@ const W: Record<Lang, Words> = {
     notPaid: "Ba a biya ba. Babu kuɗin da ya fita.",
     left: (l, lim) => `${l} ya rage a cikin iyakar ${lim} naka.`,
     answer: "Don ka biya, ka ce biya. Don ka ƙi, ka ce a'a.",
+    again: "Ka ce biya, ko a'a.",
+    who: (n, t) => (t > 0 ? `${n} ne. Ka taɓa biyan wannan mutum a baya.` : `${n} ne. Ba ka taɓa biyan wannan mutum ba.`),
+    noLimit: "Ba ka saita iyaka ba, don haka walat ɗinka zai tambaye ka.",
+    afterThis: (l) => `Idan ka biya, ${l} zai rage.`,
+    over: "Wannan kuɗin ya fi abin da ya rage, don haka walat ɗinka zai ƙi.",
+    help: "Kana iya tambaya wanene, nawa ya rage, ko in sake faɗa. Don ka biya, ka ce biya. Don ka ƙi, ka ce a'a.",
+    unclear: "Yi haƙuri, ban ji ka sosai ba.",
   },
 };
 
@@ -82,4 +125,31 @@ export function leftSentence(lang: Lang, left: Amount, limit: Amount) {
 /** The spoken instruction after a request: say pay or no. Saying pay only opens the fingerprint prompt. */
 export function answerSentence(lang: Lang) {
   return W[lang].answer;
+}
+
+export type ReplyKind = "who" | "left" | "help" | "unclear";
+
+/** The app's spoken answer to a question during a payment request, then the short "say pay or no". */
+export function replySentence(
+  lang: Lang,
+  kind: ReplyKind,
+  a: { name: string; timesPaid: number; left?: Amount; limit?: Amount; leftAfter?: Amount; over?: boolean },
+) {
+  const w = W[lang];
+  let text: string;
+  if (kind === "who") text = w.who(a.name, a.timesPaid);
+  else if (kind === "left")
+    text = a.left && a.limit
+      ? `${w.left(speakAmount(a.left), speakAmount(a.limit))} ${a.over ? w.over : a.leftAfter ? w.afterThis(speakAmount(a.leftAfter)) : ""}`.trim()
+      : w.noLimit;
+  else if (kind === "help") return w.help;
+  else text = w.unclear;
+  return `${text} ${w.again}`;
+}
+
+/** After a payment: what is left of the limit, in the same language. */
+export function paidWithLeftSentence(lang: Lang, a: { name: string; debit: Amount; left?: Amount; limit?: Amount }) {
+  const w = W[lang];
+  const paid = w.paid(a.name, speakAmount(a.debit));
+  return a.left && a.limit ? `${paid} ${w.left(speakAmount(a.left), speakAmount(a.limit))}` : paid;
 }

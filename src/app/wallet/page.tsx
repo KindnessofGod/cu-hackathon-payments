@@ -8,6 +8,21 @@ import { BrowserSpeechOutput, HostedSpeechOutput } from "@/lib/speech";
 import { startAuthentication, startRegistration } from "@simplewebauthn/browser";
 import { inNativeApp, nativeCreateKey, nativeSign } from "@/lib/native";
 import { canListen, recordAnswer } from "@/lib/listen";
+import type { Intent } from "@/lib/voice/intent";
+
+const HELP_TEXT = "You can ask: who is this, how much is left, or say again. To pay, say pay. To refuse, say no.";
+
+/** English text of the app's answers, for the screen and as the fallback voice. Same records as the server's. */
+function replyText(kind: "who" | "left", r: RequestView, cap: CapView | null): string {
+  if (kind === "who") return r.knownPayee ? `This is ${r.merchantName}. You have paid them before.` : `This is ${r.merchantName}. You have never paid this person before.`;
+  if (!cap || cap.status !== "active") return "You have no spending limit set, so your wallet will ask you on its own page.";
+  const left = `${formatAmount(cap.left)} is left of your limit of ${formatAmount(cap.limit)}.`;
+  if (!r.debitAmount) return left;
+  const after = BigInt(cap.left.value) - BigInt(r.debitAmount.value);
+  return after < BigInt(0)
+    ? `${left} This payment is more than what is left, so your wallet will refuse it.`
+    : `${left} If you pay, ${formatAmount({ ...cap.left, value: after.toString() })} will be left.`;
+}
 
 interface CapView {
   status: "active" | "stopped";
@@ -231,7 +246,7 @@ export default function WalletPage() {
   }
   if (!state.customer) return <Setup suggested={state.suggestedWalletAddress ?? ""} simulated={state.simulated} onDone={() => void refresh()} />;
 
-  if (pending) return <Approve key={pending.id} request={pending} fingerprint={state.customer.fingerprint} prefs={prefs} say={say} sayOurs={sayOurs} onDone={finish} />;
+  if (pending) return <Approve key={pending.id} request={pending} fingerprint={state.customer.fingerprint} cap={state.customer.cap} prefs={prefs} say={say} sayOurs={sayOurs} onDone={finish} />;
 
   return (
     <Home
@@ -319,6 +334,7 @@ function Setup({ suggested, simulated, onDone }: { suggested: string; simulated:
 function Approve({
   request,
   fingerprint,
+  cap,
   prefs,
   say,
   sayOurs,
@@ -326,6 +342,7 @@ function Approve({
 }: {
   request: RequestView;
   fingerprint: CustomerView["fingerprint"];
+  cap: CapView | null;
   prefs: VoicePrefs;
   say: (t: string) => void;
   sayOurs: (params: Record<string, string>, fallbackText: string) => void;
@@ -335,6 +352,7 @@ function Approve({
   const [armed, setArmed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [hearing, setHearing] = useState<"" | "speaking" | "listening" | "thinking">("");
+  const [talk, setTalk] = useState<{ who: "app" | "you"; text: string }[]>([]);
   const [message, setMessage] = useState("");
   const buttonRef = useRef<HTMLButtonElement>(null);
   const autoAsked = useRef(false);
@@ -365,37 +383,78 @@ function Approve({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, voiceAnswers]);
 
-  /** Reads the request, then listens for "pay" or "no". Voice never pays: "pay" only asks for the fingerprint. */
+  /** Speaks one of the server's sentences in the chosen language (device English voice as fallback). */
+  async function speak(params: Record<string, string>, fallbackText: string, shown: string) {
+    setTalk((t) => [...t, { who: "app", text: shown }]);
+    if (prefs.natural) await hosted.play({ ...params, id: request.id, lang: prefs.lang }, fallbackText);
+    else await voice.speak(fallbackText);
+  }
+
+  /** Records one answer and asks the server what it was. */
+  async function hear(): Promise<{ intent: Intent; heard: string }> {
+    setHearing("listening");
+    const wav = await recordAnswer();
+    if (!wav) return { intent: "unclear", heard: "" };
+    setHearing("thinking");
+    const res = await fetch(`/api/voice/listen?lang=${prefs.lang}`, { method: "POST", body: wav, headers: { "content-type": "audio/wav" } });
+    const data = (await res.json()) as { intent?: Intent; heard?: string };
+    return { intent: data.intent ?? "unclear", heard: data.heard ?? "" };
+  }
+
+  /**
+   * A short conversation about this request. The app reads it out, then keeps listening: questions
+   * ("who is this?", "how much is left?", "say again", "help") get a spoken answer from our own records,
+   * "no" refuses, and "pay" opens the fingerprint prompt. Voice never pays. It stops after two answers
+   * it cannot understand, or after MAX_TURNS, and then waits for a tap.
+   */
   async function askByVoice(): Promise<void> {
     if (busy || !ready || hearing) return;
+    const MAX_TURNS = 8;
     const prompt = "To pay, say pay. To refuse, say no.";
-    setHearing("speaking");
     setMessage(`${sentence}${consentNote} ${prompt}`);
-    if (prefs.natural) await hosted.play({ what: "asking", id: request.id, answer: "1", lang: prefs.lang }, `${sentence} ${prompt}`);
-    else await voice.speak(`${sentence} ${prompt}`);
-    let intent = "unclear" as "pay" | "refuse" | "unclear";
-    try {
-      setHearing("listening");
-      const wav = await recordAnswer();
-      if (wav) {
-        setHearing("thinking");
-        const res = await fetch(`/api/voice/listen?lang=${prefs.lang}`, { method: "POST", body: wav, headers: { "content-type": "audio/wav" } });
-        const data = (await res.json()) as { intent?: "pay" | "refuse" | "unclear" };
-        intent = data.intent ?? "unclear";
+    setHearing("speaking");
+    await speak({ what: "asking", answer: "1" }, `${sentence} ${prompt}`, `${sentence} ${prompt}`);
+    let misses = 0;
+    for (let turn = 0; turn < MAX_TURNS; turn++) {
+      let said: { intent: Intent; heard: string };
+      try {
+        said = await hear();
+      } catch {
+        setHearing("");
+        const text = needsFinger
+          ? "I could not use the microphone. Tap the screen, then rest your finger on the Home button to pay."
+          : "I could not use the microphone. Tap the screen twice to pay.";
+        setMessage(text);
+        say(text);
+        return;
       }
-    } catch {
-      setHearing("");
-      const text = needsFinger
-        ? "I could not use the microphone. Tap the screen, then rest your finger on the Home button to pay."
-        : "I could not use the microphone. Tap the screen twice to pay.";
-      setMessage(text);
-      say(text);
-      return;
+      if (said.heard) setTalk((t) => [...t, { who: "you", text: said.heard }]);
+      setHearing("speaking");
+      if (said.intent === "pay") {
+        setHearing("");
+        return activate(true);
+      }
+      if (said.intent === "refuse") {
+        setHearing("");
+        return refuse();
+      }
+      if (said.intent === "repeat") {
+        misses = 0;
+        await speak({ what: "asking", answer: "1" }, `${sentence} ${prompt}`, `${sentence} ${prompt}`);
+        continue;
+      }
+      if (said.intent === "who" || said.intent === "left" || said.intent === "help") {
+        misses = 0;
+        const text = said.intent === "help" ? HELP_TEXT : `${replyText(said.intent, request, cap)} Say pay, or no.`;
+        await speak({ what: "reply", kind: said.intent }, text, text);
+        continue;
+      }
+      misses++;
+      if (misses >= 2) break;
+      await speak({ what: "reply", kind: "unclear" }, "Sorry, I did not catch that. Say pay, or no.", "Sorry, I did not catch that. Say pay, or no.");
     }
     setHearing("");
-    if (intent === "pay") return activate(true);
-    if (intent === "refuse") return refuse();
-    const text = "I did not catch that. Tap the screen to hear the request again.";
+    const text = "I will stop listening now. Tap the screen to talk again.";
     setMessage(text);
     say(text);
   }
@@ -501,7 +560,7 @@ function Approve({
       : hearing === "speaking"
         ? "Reading the request…"
         : hearing === "listening"
-          ? "Listening. Say “pay” or “no”."
+          ? "Listening. Say “pay” or “no”, or ask “who is this?”"
           : hearing === "thinking"
             ? "Checking what you said…"
             : armed
@@ -509,7 +568,7 @@ function Approve({
                 ? "Rest your finger on the Home button to pay."
                 : "Tap again to pay. To refuse, do nothing."
               : voiceAnswers
-                ? "Tap anywhere to hear the request, then say “pay” or “no”."
+                ? "Tap anywhere to talk about this request."
                 : needsFinger
                   ? "Tap anywhere, then rest your finger on the Home button."
                   : "Tap anywhere to hear this request.";
@@ -538,6 +597,16 @@ function Approve({
       <div className="sr-only" role="status" aria-live="assertive">
         {message}
       </div>
+      {talk.length > 0 && (
+        <ol className="talk" aria-label="Conversation">
+          {talk.slice(-6).map((t, i) => (
+            <li key={i} className={t.who}>
+              <span className="sr-only">{t.who === "you" ? "You said: " : "Pay Alone said: "}</span>
+              {t.text}
+            </li>
+          ))}
+        </ol>
+      )}
       <button className="refuse" onClick={() => void refuse()} disabled={busy}>
         Refuse this request
       </button>

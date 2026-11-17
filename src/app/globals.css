@@ -176,6 +176,10 @@ video.scan { width: 100%; border-radius: 16px; border: 2px solid var(--line); ba
 .takeover .approve .debit { font-size: 1.15rem; color: rgba(255, 255, 255, 0.85); font-weight: 600; }
 .takeover .approve .how { margin-top: 1rem; display: inline-flex; align-items: center; gap: 0.6rem; padding: 0.8rem 1.2rem; border-radius: 999px; background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.25); font-size: 1.15rem; }
 .takeover .approve.armed .how { background: #fff; color: var(--brand); }
+.takeover .talk { list-style: none; margin: 0; padding: 0.6rem 1rem; display: flex; flex-direction: column; gap: 0.4rem; max-height: 32vh; overflow-y: auto; background: #0e1d17; }
+.takeover .talk li { max-width: 85%; padding: 0.5rem 0.85rem; border-radius: 1rem; font-size: 1rem; line-height: 1.35; }
+.takeover .talk li.app { align-self: flex-start; background: rgba(255, 255, 255, 0.1); border-bottom-left-radius: 0.3rem; }
+.takeover .talk li.you { align-self: flex-end; background: #0b6e4f; border-bottom-right-radius: 0.3rem; }
 @media (prefers-reduced-motion: no-preference) {
   .takeover .approve.armed .how svg { animation: pulse 1.4s ease-in-out infinite; }
   @keyframes pulse { 50% { transform: scale(1.18); } }
