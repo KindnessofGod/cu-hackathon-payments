@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, errorText, type ApiError } from "@/lib/client";
 import { formatAmount, speakAmount, type Amount } from "@/lib/money";
-import { BrowserSpeechOutput } from "@/lib/speech";
+import { BrowserSpeechOutput, HostedSpeechOutput } from "@/lib/speech";
 import { startAuthentication, startRegistration } from "@simplewebauthn/browser";
 
 interface CapView {
@@ -67,6 +67,38 @@ interface State {
 }
 
 const voice = new BrowserSpeechOutput();
+const hosted = new HostedSpeechOutput(voice);
+
+type Lang = "en" | "pcm" | "yo" | "ig" | "ha";
+const LANG_NAMES: Record<Lang, string> = { en: "English", pcm: "Pidgin", yo: "Yoruba", ig: "Igbo", ha: "Hausa" };
+
+/** How the app should speak: off, the device's English voice, or the natural hosted voice in a language. */
+interface VoicePrefs {
+  on: boolean;
+  natural: boolean;
+  lang: Lang;
+}
+
+function readPrefs(): VoicePrefs {
+  try {
+    const l = window.localStorage.getItem("lang") as Lang | null;
+    return {
+      on: window.localStorage.getItem("appVoice") !== "off",
+      natural: window.localStorage.getItem("naturalVoice") !== "off",
+      lang: l && l in LANG_NAMES ? l : "en",
+    };
+  } catch {
+    return { on: true, natural: true, lang: "en" };
+  }
+}
+
+function savePref(key: string, value: string) {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    /* private mode: the setting lasts for this visit only */
+  }
+}
 
 function requestSentence(r: RequestView): string {
   const who = r.knownPayee ? r.merchantName : `A new person you have never paid, called ${r.merchantName},`;
@@ -89,7 +121,8 @@ export default function WalletPage() {
   const [state, setState] = useState<State | null>(null);
   const [loadError, setLoadError] = useState<ApiError | null>(null);
   const [notice, setNotice] = useState<{ text: string; good: boolean; walletSaid?: string } | null>(null);
-  const [appVoice, setAppVoice] = useState(true);
+  const [prefs, setPrefs] = useState<VoicePrefs>({ on: true, natural: true, lang: "en" });
+  const appVoice = prefs.on;
   const spokenFor = useRef<string>("");
 
   const say = useCallback(
@@ -97,6 +130,16 @@ export default function WalletPage() {
       if (appVoice && text) void voice.speak(text);
     },
     [appVoice],
+  );
+
+  /** One of the server's sentences in the chosen language; the English text is the fallback. */
+  const sayOurs = useCallback(
+    (params: Record<string, string>, fallbackText: string) => {
+      if (!prefs.on) return;
+      if (prefs.natural) hosted.play({ ...params, lang: prefs.lang }, fallbackText);
+      else void voice.speak(fallbackText);
+    },
+    [prefs],
   );
 
   const refresh = useCallback(async () => {
@@ -112,7 +155,7 @@ export default function WalletPage() {
   }, []);
 
   useEffect(() => {
-    setAppVoice(window.localStorage.getItem("appVoice") !== "off");
+    setPrefs(readPrefs());
     const q = new URLSearchParams(window.location.search);
     const outcome = q.get("outcome");
     if (outcome) {
@@ -151,9 +194,10 @@ export default function WalletPage() {
       const s = await refresh();
       const text = resultSentence(r, s?.customer?.cap ?? null);
       setNotice({ text, good: r.status === "paid", walletSaid: r.failure?.walletSaid });
-      say(text);
+      if (r.status === "paid") sayOurs({ what: "result", id: r.id }, text);
+      else say(text);
     },
-    [refresh, say],
+    [refresh, say, sayOurs],
   );
 
   if (loadError && !state) {
@@ -177,7 +221,7 @@ export default function WalletPage() {
   }
   if (!state.customer) return <Setup suggested={state.suggestedWalletAddress ?? ""} simulated={state.simulated} onDone={() => void refresh()} />;
 
-  if (pending) return <Approve key={pending.id} request={pending} fingerprint={state.customer.fingerprint} say={say} onDone={finish} />;
+  if (pending) return <Approve key={pending.id} request={pending} fingerprint={state.customer.fingerprint} say={say} sayOurs={sayOurs} onDone={finish} />;
 
   return (
     <Home
@@ -185,12 +229,15 @@ export default function WalletPage() {
       history={state.history ?? []}
       notice={notice}
       loadError={loadError}
-      appVoice={appVoice}
-      setAppVoice={(on) => {
-        setAppVoice(on);
-        window.localStorage.setItem("appVoice", on ? "on" : "off");
-        if (!on) voice.stop();
+      prefs={prefs}
+      setPrefs={(next) => {
+        setPrefs(next);
+        savePref("appVoice", next.on ? "on" : "off");
+        savePref("naturalVoice", next.natural ? "on" : "off");
+        savePref("lang", next.lang);
+        if (!next.on) hosted.stop();
       }}
+      sayOurs={sayOurs}
       say={say}
       refresh={() => void refresh()}
       setNotice={setNotice}
@@ -253,11 +300,13 @@ function Approve({
   request,
   fingerprint,
   say,
+  sayOurs,
   onDone,
 }: {
   request: RequestView;
   fingerprint: CustomerView["fingerprint"];
   say: (t: string) => void;
+  sayOurs: (params: Record<string, string>, fallbackText: string) => void;
   onDone: (r: RequestView) => void;
 }) {
   const needsFinger = fingerprint.length > 0;
@@ -287,11 +336,13 @@ function Approve({
     }
     if (!armed) {
       setArmed(true);
+      // The request in the chosen language and voice, then the instruction in English.
+      sayOurs({ what: "asking", id: request.id }, sentence);
       const text = needsFinger
         ? `${sentence}${consentNote} To pay, tap again, then rest your finger on the Home button. To refuse, do nothing.`
         : `${sentence}${consentNote} Tap again to pay. To refuse, do nothing.`;
       setMessage(text);
-      say(text);
+      setTimeout(() => say(needsFinger ? "To pay, tap again, then rest your finger on the Home button." : "Tap again to pay."), 9000);
       return;
     }
     let proof: { method: "confirm-button" | "passkey"; challenge?: string; response?: unknown } = { method: "confirm-button", challenge: request.challenge };
@@ -381,8 +432,9 @@ function Home(props: {
   history: HistoryItem[];
   notice: { text: string; good: boolean; walletSaid?: string } | null;
   loadError: ApiError | null;
-  appVoice: boolean;
-  setAppVoice: (on: boolean) => void;
+  prefs: VoicePrefs;
+  setPrefs: (p: VoicePrefs) => void;
+  sayOurs: (params: Record<string, string>, fallbackText: string) => void;
   say: (t: string) => void;
   refresh: () => void;
   setNotice: (n: { text: string; good: boolean; walletSaid?: string } | null) => void;
@@ -429,17 +481,38 @@ function Home(props: {
 
       <Fingerprint customer={customer} refresh={props.refresh} say={say} />
 
-      <Limit cap={cap} customer={customer} refresh={props.refresh} say={say} setNotice={props.setNotice} />
+      <Limit cap={cap} customer={customer} refresh={props.refresh} say={say} sayOurs={props.sayOurs} setNotice={props.setNotice} />
 
       <History items={props.history} say={say} />
 
       <section className="card" aria-labelledby="set-h">
         <h2 id="set-h">Settings</h2>
         <label style={{ display: "flex", gap: "0.8rem", alignItems: "center", fontWeight: 400 }}>
-          <input type="checkbox" style={{ width: "1.6rem", height: "1.6rem" }} checked={props.appVoice} onChange={(e) => props.setAppVoice(e.target.checked)} />
+          <input type="checkbox" style={{ width: "1.6rem", height: "1.6rem" }} checked={props.prefs.on} onChange={(e) => props.setPrefs({ ...props.prefs, on: e.target.checked })} />
           <span>The app speaks aloud. Turn this off if you use VoiceOver or TalkBack, which already read the screen.</span>
         </label>
-        <p className="muted">The voice is the device&apos;s built-in English voice, used as a placeholder. Nigerian-language voices are planned.</p>
+        <label style={{ display: "flex", gap: "0.8rem", alignItems: "center", fontWeight: 400 }}>
+          <input
+            type="checkbox"
+            style={{ width: "1.6rem", height: "1.6rem" }}
+            checked={props.prefs.natural}
+            disabled={!props.prefs.on}
+            onChange={(e) => props.setPrefs({ ...props.prefs, natural: e.target.checked })}
+          />
+          <span>Natural voice for requests and results (ElevenLabs, or Spitch for Igbo). Needs internet; if it is slow, the device&apos;s own English voice is used.</span>
+        </label>
+        <label htmlFor="lang">Language for requests and results</label>
+        <select id="lang" value={props.prefs.lang} disabled={!props.prefs.on || !props.prefs.natural} onChange={(e) => props.setPrefs({ ...props.prefs, lang: e.target.value as Lang })}>
+          {(Object.keys(LANG_NAMES) as Lang[]).map((l) => (
+            <option key={l} value={l}>
+              {LANG_NAMES[l]}
+            </option>
+          ))}
+        </select>
+        <p className="muted">
+          Amounts are always said in English, as most people say them. The Pidgin, Yoruba, Igbo and Hausa sentences have not yet been checked by a native speaker. Instructions are
+          in English for now.
+        </p>
         <button
           className="secondary"
           onClick={async () => {
@@ -459,12 +532,14 @@ function Limit({
   customer,
   refresh,
   say,
+  sayOurs,
   setNotice,
 }: {
   cap: CapView | null;
   customer: CustomerView;
   refresh: () => void;
   say: (t: string) => void;
+  sayOurs: (params: Record<string, string>, fallbackText: string) => void;
   setNotice: (n: { text: string; good: boolean; walletSaid?: string } | null) => void;
 }) {
   const [amount, setAmount] = useState("");
@@ -526,7 +601,7 @@ function Limit({
             Counts only payments made through this app since you set the limit on {new Date(cap.grantedAt).toLocaleDateString()}. Payments made before that, or outside this app, are not
             included. This is what is left of your limit, not your account balance: Open Payments does not let an app read a balance.
           </p>
-          <button className="wide secondary" onClick={() => say(`${speakAmount(cap.left)} is left of your limit of ${speakAmount(cap.limit)} for this ${cap.every}.`)}>
+          <button className="wide secondary" onClick={() => sayOurs({ what: "left" }, `${speakAmount(cap.left)} is left of your limit of ${speakAmount(cap.limit)} for this ${cap.every}.`)}>
             Say what is left aloud
           </button>
           <button className="wide danger" disabled={busy} onClick={() => void stop()}>

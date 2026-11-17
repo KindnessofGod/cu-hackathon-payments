@@ -30,6 +30,9 @@ describe("formatting", () => {
     expect(speakAmount(ngn("200000"))).toBe("2,000 naira");
     expect(speakAmount(ngn("205050"))).toBe("2,050 naira and 50 kobo");
     expect(speakAmount({ value: "1250", assetCode: "XYZ", assetScale: 2 })).toBe("12.50 XYZ");
+    expect(speakAmount({ value: "100", assetCode: "USD", assetScale: 2 })).toBe("1 dollar");
+    expect(speakAmount({ value: "101", assetCode: "USD", assetScale: 2 })).toBe("1 dollar and 1 cent");
+    expect(speakAmount({ value: "50", assetCode: "USD", assetScale: 2 })).toBe("50 cents");
   });
 });
 

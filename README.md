@@ -56,7 +56,8 @@ Code: `src/lib/op/real.ts` (the SDK calls), `src/lib/domain.ts` (the journey), `
 | Failure states: unknown pay code, bad amount, expired request, consent refused, over limit, wallet unreachable | yes (screens and handling) | failures triggered on the pretend wallet |  |
 | Approval tied to one quote and amount, single use | yes |  |  |
 | Fingerprint approval (WebAuthn passkey, Touch ID) | yes: once set up, every payment needs it and a tap alone is refused. Tested with Chrome's virtual authenticator; **not yet tried on the iPad** |  |  |
-| Spoken read-back | placeholder: the device's built-in English voice |  | Spitch / ElevenLabs, Nigerian languages |
+| Spoken read-back of requests, results and what is left | yes: ElevenLabs (English, Pidgin, Yoruba, Hausa) and Spitch (Igbo), with the device's English voice as fallback. Non-English wording **not yet checked by a native speaker** |  |  |
+| Spoken commands (speech input) |  |  | yes |
 | Pay code as QR, six digits, spoken aloud, lock-screen picture | yes |  |  |
 | Payment history on both apps, spoken summary for the customer | yes (payments through this app only) |  |  |
 | Seller scans the pay code with a camera | written, **not yet tested on a device** |  |  |

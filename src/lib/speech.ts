@@ -1,7 +1,7 @@
 // Voice seams. Voice is the interface only: nothing here can approve money.
 //
-// SpeechOutput: today a PLACEHOLDER using the browser's built-in English voice.
-//               Planned: Spitch / ElevenLabs adapters for Nigerian languages (see docs/VOICE_PLAN.md).
+// SpeechOutput: the hosted voice (ElevenLabs, or Spitch for Igbo) via /api/voice/speak, falling back to
+//               the browser's built-in English voice if the hosted one does not start within 4 seconds.
 // SpeechInput:  not built. Typed and tapped input only.
 
 export type Lang = "en" | "yo" | "ig" | "ha" | "pcm";
@@ -36,5 +36,47 @@ export class BrowserSpeechOutput implements SpeechOutput {
 export class UnsupportedSpeechInput implements SpeechInput {
   listen(): Promise<string> {
     return Promise.reject(new Error("Speech input is planned, not built."));
+  }
+}
+
+/**
+ * Plays one of the server's own sentences (the browser only names which one). Starts inside the tap
+ * that asked for it, which iOS requires for sound. Falls back to the built-in voice on any failure.
+ */
+export class HostedSpeechOutput {
+  private audio: HTMLAudioElement | null = null;
+  constructor(private fallback: BrowserSpeechOutput) {}
+
+  play(params: Record<string, string>, fallbackText: string): void {
+    this.stop();
+    const a = new Audio(`/api/voice/speak?${new URLSearchParams(params).toString()}`);
+    this.audio = a;
+    let started = false;
+    let gaveUp = false;
+    const giveUp = () => {
+      if (started || gaveUp) return;
+      gaveUp = true;
+      a.pause();
+      void this.fallback.speak(fallbackText);
+    };
+    const timer = setTimeout(giveUp, 4000);
+    a.addEventListener("playing", () => {
+      started = true;
+      clearTimeout(timer);
+    });
+    a.addEventListener("error", () => {
+      clearTimeout(timer);
+      giveUp();
+    });
+    a.play().catch(() => {
+      clearTimeout(timer);
+      giveUp();
+    });
+  }
+
+  stop(): void {
+    this.audio?.pause();
+    this.audio = null;
+    this.fallback.stop();
   }
 }

@@ -54,16 +54,17 @@ export function formatAmount(a: Amount): string {
   return `${a.assetCode} ${group(whole)}${frac !== undefined ? "." + frac : ""}`;
 }
 
-const CURRENCY_WORDS: Record<string, [string, string]> = {
-  NGN: ["naira", "kobo"],
-  USD: ["dollars", "cents"],
-  EUR: ["euros", "cents"],
-  GBP: ["pounds", "pence"],
-  ZAR: ["rand", "cents"],
-  KES: ["shillings", "cents"],
-  GHS: ["cedis", "pesewas"],
-  CAD: ["Canadian dollars", "cents"],
-  MXN: ["pesos", "centavos"],
+// [plural, minor plural, singular, minor singular]
+const CURRENCY_WORDS: Record<string, [string, string, string, string]> = {
+  NGN: ["naira", "kobo", "naira", "kobo"],
+  USD: ["dollars", "cents", "dollar", "cent"],
+  EUR: ["euros", "cents", "euro", "cent"],
+  GBP: ["pounds", "pence", "pound", "penny"],
+  ZAR: ["rand", "cents", "rand", "cent"],
+  KES: ["shillings", "cents", "shilling", "cent"],
+  GHS: ["cedis", "pesewas", "cedi", "pesewa"],
+  CAD: ["Canadian dollars", "cents", "Canadian dollar", "cent"],
+  MXN: ["pesos", "centavos", "peso", "centavo"],
 };
 
 /** For speech: "2,050 naira" or "12 dollars and 50 cents". Never drops a non-zero fraction. */
@@ -72,8 +73,11 @@ export function speakAmount(a: Amount): string {
   const words = CURRENCY_WORDS[a.assetCode];
   const fracIsZero = !frac || /^0+$/.test(frac);
   if (!words) return `${group(whole)}${fracIsZero ? "" : "." + frac} ${a.assetCode}`;
-  if (fracIsZero) return `${group(whole)} ${words[0]}`;
-  if (a.assetScale === 2) return `${group(whole)} ${words[0]} and ${BigInt(frac).toString()} ${words[1]}`;
+  const major = whole === "1" ? words[2] : words[0];
+  if (fracIsZero) return `${group(whole)} ${major}`;
+  const minor = BigInt(frac).toString();
+  if (a.assetScale === 2 && whole === "0") return `${minor} ${minor === "1" ? words[3] : words[1]}`;
+  if (a.assetScale === 2) return `${group(whole)} ${major} and ${minor} ${minor === "1" ? words[3] : words[1]}`;
   return `${group(whole)}.${frac} ${words[0]}`;
 }
 
