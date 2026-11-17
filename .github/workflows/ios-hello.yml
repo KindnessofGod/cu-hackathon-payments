@@ -1,0 +1,36 @@
+name: Hello test app (unsigned build)
+
+on:
+  workflow_dispatch:
+  push:
+    paths: ["ios-hello/**", ".github/workflows/ios-hello.yml"]
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate the Xcode project
+        working-directory: ios-hello
+        run: xcodegen generate
+      - name: Build for iPad (no signing; Sideloadly signs it on the owner's PC)
+        working-directory: ios-hello
+        run: |
+          set -o pipefail
+          xcodebuild -project HelloTest.xcodeproj -target HelloTest -configuration Release -sdk iphoneos \
+            SYMROOT="$PWD/build" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build | tail -40
+      - name: Package as .ipa
+        working-directory: ios-hello
+        run: |
+          mkdir -p Payload
+          cp -R build/Release-iphoneos/HelloTest.app Payload/
+          zip -qry HelloTest.ipa Payload
+          ls -la HelloTest.ipa
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HelloTest.ipad-unsigned
+          path: ios-hello/HelloTest.ipa
+          retention-days: 14

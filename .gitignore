@@ -19,3 +19,7 @@ ios/build/
 ios/*.xcodeproj/
 ios/Payload/
 ios/*.ipa
+ios-hello/build/
+ios-hello/*.xcodeproj/
+ios-hello/Payload/
+ios-hello/*.ipa
