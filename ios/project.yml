@@ -20,6 +20,7 @@ targets:
         UIRequiresFullScreen: true
         NSFaceIDUsageDescription: Pay Alone uses your fingerprint or face to approve each payment.
         NSCameraUsageDescription: Pay Alone uses the camera only when you choose to scan a pay code.
+        NSMicrophoneUsageDescription: Pay Alone listens for a few seconds after reading a payment request, so you can say pay or no. Your voice never moves money; your fingerprint does.
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
     settings:

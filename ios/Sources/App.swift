@@ -145,9 +145,11 @@ final class WebViewController: UIViewController, WKScriptMessageHandlerWithReply
         present(alert, animated: true)
     }
 
-    /// Camera for scanning a pay code, if the page asks.
+    /// Microphone (spoken "pay" or "no") and camera (scanning a pay code), for our own site only.
+    /// iPadOS still asks the person once, using the descriptions in Info.plist; after that the page
+    /// does not ask again on every launch, which a blind user could not easily answer.
     func webView(_ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin, initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType, decisionHandler: @escaping (WKPermissionDecision) -> Void) {
-        decisionHandler(origin.host == Self.startURL.host ? .prompt : .deny)
+        decisionHandler(origin.host == Self.startURL.host ? .grant : .deny)
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { showOffline(error) }

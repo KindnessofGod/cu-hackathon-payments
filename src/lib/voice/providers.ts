@@ -55,3 +55,59 @@ export async function synthesize(text: string, lang: Lang): Promise<{ audio: Arr
   }
   throw new Error(errors.join("; "));
 }
+
+// ---------- listening (speech to text) ----------
+// Spitch first for Yoruba, Igbo and Hausa (built for Nigerian languages); ElevenLabs first for English
+// and Pidgin. Either one backs up the other.
+const ELEVEN_STT_MODEL = process.env.ELEVENLABS_STT_MODEL || "scribe_v1";
+const ELEVEN_STT_LANG: Record<Lang, string | undefined> = { en: "eng", pcm: undefined, yo: "yor", ig: "ibo", ha: "hau" };
+const STT_ORDER: Record<Lang, Provider[]> = {
+  en: ["elevenlabs", "spitch"],
+  pcm: ["elevenlabs", "spitch"],
+  yo: ["spitch", "elevenlabs"],
+  ig: ["spitch", "elevenlabs"],
+  ha: ["spitch", "elevenlabs"],
+};
+
+async function elevenHear(wav: Uint8Array, lang: Lang): Promise<string> {
+  const key = process.env.ELEVENLABS_API_KEY;
+  if (!key) throw new Error("no key");
+  const call = (languageCode?: string) => {
+    const form = new FormData();
+    form.append("model_id", ELEVEN_STT_MODEL);
+    form.append("file", new Blob([wav as BlobPart], { type: "audio/wav" }), "answer.wav");
+    form.append("tag_audio_events", "false");
+    if (languageCode) form.append("language_code", languageCode);
+    return fetch("https://api.elevenlabs.io/v1/speech-to-text", {
+      method: "POST",
+      headers: { "xi-api-key": key },
+      body: form,
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+  };
+  let res = await call(ELEVEN_STT_LANG[lang]);
+  if (res.status === 400 || res.status === 422) res = await call(undefined);
+  if (!res.ok) throw new Error(`elevenlabs ${res.status}`);
+  const data = (await res.json()) as { text?: string };
+  return data.text ?? "";
+}
+
+async function spitchHear(wav: Uint8Array, lang: Lang): Promise<string> {
+  if (!process.env.SPITCH_API_KEY) throw new Error("not available");
+  const client = new Spitch({ apiKey: process.env.SPITCH_API_KEY, timeout: TIMEOUT_MS, maxRetries: 0 });
+  const res = await client.speech.transcribe({ content: new File([wav as BlobPart], "answer.wav", { type: "audio/wav" }), language: lang === "pcm" ? "en" : lang });
+  return res.text ?? "";
+}
+
+/** Returns what was said and which service heard it, or throws if every service failed. */
+export async function transcribe(wav: Uint8Array, lang: Lang): Promise<{ text: string; provider: Provider }> {
+  const errors: string[] = [];
+  for (const p of STT_ORDER[lang]) {
+    try {
+      return { text: p === "spitch" ? await spitchHear(wav, lang) : await elevenHear(wav, lang), provider: p };
+    } catch (e) {
+      errors.push(`${p}: ${e instanceof Error ? e.message.slice(0, 80) : "failed"}`);
+    }
+  }
+  throw new Error(errors.join("; "));
+}

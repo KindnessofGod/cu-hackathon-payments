@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-type IconName = "shop" | "person" | "shield" | "finger" | "check" | "cross" | "clock" | "speaker" | "qr" | "back" | "stop" | "list" | "gear";
+type IconName = "shop" | "person" | "shield" | "finger" | "check" | "cross" | "clock" | "speaker" | "mic" | "qr" | "back" | "stop" | "list" | "gear";
 
 const PATHS: Record<IconName, string> = {
   shop: "M3 9l1.5-5h15L21 9M3 9h18M3 9v11h18V9M8 20v-6h8v6",
@@ -10,6 +10,7 @@ const PATHS: Record<IconName, string> = {
   check: "M5 12.5l4.5 4.5L19 7.5",
   cross: "M6 6l12 12M18 6L6 18",
   clock: "M12 21a9 9 0 100-18 9 9 0 000 18zm0-13v5l3 2",
+  mic: "M12 15a3 3 0 003-3V6a3 3 0 00-6 0v6a3 3 0 003 3zm-6-3a6 6 0 0012 0M12 18v3",
   speaker: "M4 9v6h4l5 4V5L8 9H4zm12-1a5 5 0 010 8m2.5-10.5a8.5 8.5 0 010 13",
   qr: "M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h2v2h-2zM18 14h2v2h-2zM14 18h2v2h-2zM18 18h2v2h-2z",
   back: "M15 5l-7 7 7 7",

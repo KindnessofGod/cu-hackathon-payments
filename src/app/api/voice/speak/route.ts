@@ -1,7 +1,7 @@
 import { capSummary, getRequestFor } from "@/lib/domain";
 import { fail, requireCustomer } from "@/lib/http";
 import { synthesize } from "@/lib/voice/providers";
-import { askingSentence, isLang, leftSentence, resultSentence } from "@/lib/voice/sentences";
+import { answerSentence, askingSentence, isLang, leftSentence, resultSentence } from "@/lib/voice/sentences";
 
 /**
  * Speaks one of our own sentences in the chosen language. The browser names WHICH sentence
@@ -23,6 +23,7 @@ export async function GET(req: Request) {
       if (what === "asking") {
         if (!r.quote) return new Response(null, { status: 409 });
         text = askingSentence(lang, { name: r.merchantName, known: Boolean(customer.contacts[r.merchantWalletId]), receive: r.quote.receiveAmount, debit: r.quote.debitAmount });
+        if (q.get("answer") === "1") text += ` ${answerSentence(lang)}`;
       } else if (what === "result") {
         text = resultSentence(lang, { paid: r.status === "paid", name: r.merchantName, debit: r.paid?.debitAmount });
       } else {

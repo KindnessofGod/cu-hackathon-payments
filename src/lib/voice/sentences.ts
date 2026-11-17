@@ -19,6 +19,7 @@ interface Words {
   paid: (who: string, debit: string) => string;
   notPaid: string;
   left: (left: string, limit: string) => string;
+  answer: string;
 }
 
 const W: Record<Lang, Words> = {
@@ -28,6 +29,7 @@ const W: Record<Lang, Words> = {
     paid: (who, d) => `Paid. ${d} left your account for ${who}.`,
     notPaid: "Not paid. No money moved.",
     left: (l, lim) => `${l} is left of your limit of ${lim}.`,
+    answer: "To pay, say pay. To refuse, say no.",
   },
   pcm: {
     newPerson: (n) => `New person wey you never pay before, ${n},`,
@@ -35,6 +37,7 @@ const W: Record<Lang, Words> = {
     paid: (who, d) => `E don pay. ${d} don comot from your account go ${who}.`,
     notPaid: "E no pay. No money move.",
     left: (l, lim) => `${l} remain for your limit of ${lim}.`,
+    answer: "If you wan pay, talk pay. If you no want, talk no.",
   },
   yo: {
     newPerson: (n) => `Ẹni tuntun tí o kò sanwó fún rí, ${n},`,
@@ -42,6 +45,7 @@ const W: Record<Lang, Words> = {
     paid: (who, d) => `A ti san án. ${d} ti jáde nínú àkáǹtì rẹ lọ sọ́dọ̀ ${who}.`,
     notPaid: "A kò san án. Kò sí owó tó jáde.",
     left: (l, lim) => `${l} ló kù nínú òdiwọ̀n ${lim} rẹ.`,
+    answer: "Láti sanwó, sọ pé san. Láti kọ̀, sọ pé rárá.",
   },
   ig: {
     newPerson: (n) => `Onye ọhụrụ ị na-akwụbeghị ụgwọ, ${n},`,
@@ -49,6 +53,7 @@ const W: Record<Lang, Words> = {
     paid: (who, d) => `Akwụọla ụgwọ. ${d} esila n'akaụntụ gị gaa ${who}.`,
     notPaid: "Akwụghị ụgwọ. Ego ọ bụla esighị pụọ.",
     left: (l, lim) => `${l} fọdụrụ n'oke ${lim} gị.`,
+    answer: "Ka ị kwụọ ụgwọ, kwuo kwụọ. Ka ị jụ, kwuo mba.",
   },
   ha: {
     newPerson: (n) => `Sabon mutum da ba ka taɓa biya ba, ${n},`,
@@ -56,6 +61,7 @@ const W: Record<Lang, Words> = {
     paid: (who, d) => `An biya. ${d} ya fita daga asusunka zuwa ${who}.`,
     notPaid: "Ba a biya ba. Babu kuɗin da ya fita.",
     left: (l, lim) => `${l} ya rage a cikin iyakar ${lim} naka.`,
+    answer: "Don ka biya, ka ce biya. Don ka ƙi, ka ce a'a.",
   },
 };
 
@@ -71,4 +77,9 @@ export function resultSentence(lang: Lang, a: { paid: boolean; name: string; deb
 
 export function leftSentence(lang: Lang, left: Amount, limit: Amount) {
   return W[lang].left(speakAmount(left), speakAmount(limit));
+}
+
+/** The spoken instruction after a request: say pay or no. Saying pay only opens the fingerprint prompt. */
+export function answerSentence(lang: Lang) {
+  return W[lang].answer;
 }

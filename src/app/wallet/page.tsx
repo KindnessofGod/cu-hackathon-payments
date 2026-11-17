@@ -7,6 +7,7 @@ import { formatAmount, speakAmount, type Amount } from "@/lib/money";
 import { BrowserSpeechOutput, HostedSpeechOutput } from "@/lib/speech";
 import { startAuthentication, startRegistration } from "@simplewebauthn/browser";
 import { inNativeApp, nativeCreateKey, nativeSign } from "@/lib/native";
+import { canListen, recordAnswer } from "@/lib/listen";
 
 interface CapView {
   status: "active" | "stopped";
@@ -77,6 +78,8 @@ const LANG_NAMES: Record<Lang, string> = { en: "English", pcm: "Pidgin", yo: "Yo
 interface VoicePrefs {
   on: boolean;
   natural: boolean;
+  /** After reading a request, listen for a spoken "pay" or "no". "pay" only opens the fingerprint prompt. */
+  listen: boolean;
   lang: Lang;
 }
 
@@ -86,10 +89,11 @@ function readPrefs(): VoicePrefs {
     return {
       on: window.localStorage.getItem("appVoice") !== "off",
       natural: window.localStorage.getItem("naturalVoice") !== "off",
+      listen: window.localStorage.getItem("voiceAnswer") !== "off",
       lang: l && l in LANG_NAMES ? l : "en",
     };
   } catch {
-    return { on: true, natural: true, lang: "en" };
+    return { on: true, natural: true, listen: true, lang: "en" };
   }
 }
 
@@ -122,7 +126,7 @@ export default function WalletPage() {
   const [state, setState] = useState<State | null>(null);
   const [loadError, setLoadError] = useState<ApiError | null>(null);
   const [notice, setNotice] = useState<{ text: string; good: boolean; walletSaid?: string } | null>(null);
-  const [prefs, setPrefs] = useState<VoicePrefs>({ on: true, natural: true, lang: "en" });
+  const [prefs, setPrefs] = useState<VoicePrefs>({ on: true, natural: true, listen: true, lang: "en" });
   const appVoice = prefs.on;
   const spokenFor = useRef<string>("");
 
@@ -186,9 +190,10 @@ export default function WalletPage() {
   useEffect(() => {
     if (pending && pending.debitAmount && spokenFor.current !== pending.id) {
       spokenFor.current = pending.id;
+      if (inNativeApp() && prefs.on && prefs.listen && canListen()) return; // the approval screen asks by voice itself
       say(`${requestSentence(pending)} Tap anywhere to hear this again.`);
     }
-  }, [pending, say]);
+  }, [pending, say, prefs]);
 
   const finish = useCallback(
     async (r: RequestView) => {
@@ -226,7 +231,7 @@ export default function WalletPage() {
   }
   if (!state.customer) return <Setup suggested={state.suggestedWalletAddress ?? ""} simulated={state.simulated} onDone={() => void refresh()} />;
 
-  if (pending) return <Approve key={pending.id} request={pending} fingerprint={state.customer.fingerprint} say={say} sayOurs={sayOurs} onDone={finish} />;
+  if (pending) return <Approve key={pending.id} request={pending} fingerprint={state.customer.fingerprint} prefs={prefs} say={say} sayOurs={sayOurs} onDone={finish} />;
 
   return (
     <Home
@@ -239,6 +244,7 @@ export default function WalletPage() {
         setPrefs(next);
         savePref("appVoice", next.on ? "on" : "off");
         savePref("naturalVoice", next.natural ? "on" : "off");
+        savePref("voiceAnswer", next.listen ? "on" : "off");
         savePref("lang", next.lang);
         if (!next.on) hosted.stop();
       }}
@@ -313,12 +319,14 @@ function Setup({ suggested, simulated, onDone }: { suggested: string; simulated:
 function Approve({
   request,
   fingerprint,
+  prefs,
   say,
   sayOurs,
   onDone,
 }: {
   request: RequestView;
   fingerprint: CustomerView["fingerprint"];
+  prefs: VoicePrefs;
   say: (t: string) => void;
   sayOurs: (params: Record<string, string>, fallbackText: string) => void;
   onDone: (r: RequestView) => void;
@@ -326,10 +334,13 @@ function Approve({
   const needsFinger = fingerprint.length > 0;
   const [armed, setArmed] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [hearing, setHearing] = useState<"" | "speaking" | "listening" | "thinking">("");
   const [message, setMessage] = useState("");
   const buttonRef = useRef<HTMLButtonElement>(null);
+  const autoAsked = useRef(false);
   const ready = Boolean(request.challenge && request.debitAmount);
   const sentence = useMemo(() => requestSentence(request), [request]);
+  const voiceAnswers = prefs.on && prefs.listen && canListen();
   const consentNote = request.needsWalletConsent
     ? " You have no spending limit yet, so your wallet will ask you to confirm this one payment on its own page."
     : "";
@@ -345,17 +356,64 @@ function Approve({
     return () => clearTimeout(t);
   }, [armed]);
 
-  async function activate() {
+  // Inside the iPad app the request is read out and the app listens without any tap at all.
+  useEffect(() => {
+    if (ready && voiceAnswers && inNativeApp() && !autoAsked.current) {
+      autoAsked.current = true;
+      void askByVoice();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, voiceAnswers]);
+
+  /** Reads the request, then listens for "pay" or "no". Voice never pays: "pay" only asks for the fingerprint. */
+  async function askByVoice(): Promise<void> {
+    if (busy || !ready || hearing) return;
+    const prompt = "To pay, say pay. To refuse, say no.";
+    setHearing("speaking");
+    setMessage(`${sentence}${consentNote} ${prompt}`);
+    if (prefs.natural) await hosted.play({ what: "asking", id: request.id, answer: "1", lang: prefs.lang }, `${sentence} ${prompt}`);
+    else await voice.speak(`${sentence} ${prompt}`);
+    let intent = "unclear" as "pay" | "refuse" | "unclear";
+    try {
+      setHearing("listening");
+      const wav = await recordAnswer();
+      if (wav) {
+        setHearing("thinking");
+        const res = await fetch(`/api/voice/listen?lang=${prefs.lang}`, { method: "POST", body: wav, headers: { "content-type": "audio/wav" } });
+        const data = (await res.json()) as { intent?: "pay" | "refuse" | "unclear" };
+        intent = data.intent ?? "unclear";
+      }
+    } catch {
+      setHearing("");
+      const text = needsFinger
+        ? "I could not use the microphone. Tap the screen, then rest your finger on the Home button to pay."
+        : "I could not use the microphone. Tap the screen twice to pay.";
+      setMessage(text);
+      say(text);
+      return;
+    }
+    setHearing("");
+    if (intent === "pay") return activate(true);
+    if (intent === "refuse") return refuse();
+    const text = "I did not catch that. Tap the screen to hear the request again.";
+    setMessage(text);
+    say(text);
+  }
+
+  /** spoken: the customer already heard the request and said "pay". */
+  async function activate(spoken = false): Promise<void> {
     if (busy || !ready) {
       say(sentence);
       return;
     }
+    if (hearing) return;
+    // First tap with voice answers on: read the request and listen. A tap while armed goes straight on.
+    if (!spoken && !armed && voiceAnswers) return askByVoice();
     let proof: { method: "confirm-button" | "passkey" | "device-key"; challenge?: string; response?: unknown; signature?: string } = {
       method: "confirm-button",
       challenge: request.challenge,
     };
     if (needsFinger) {
-      // One tap: the request is read out and the fingerprint is asked for at the same time.
       // The fingerprint signs this request's challenge only, so it cannot pay anything else.
       const useNative = inNativeApp() && fingerprint.some((f) => f.kind === "device");
       const passkeys = fingerprint.filter((f) => f.kind === "passkey");
@@ -377,22 +435,32 @@ function Approve({
             },
           });
       setArmed(true);
-      sayOurs({ what: "asking", id: request.id }, `${sentence} To pay, rest your finger on the Home button.`);
-      setMessage(`${sentence}${consentNote} To pay, rest your finger on the Home button. To refuse, do nothing.`);
+      if (spoken) say("Rest your finger on the Home button to pay.");
+      else sayOurs({ what: "asking", id: request.id }, `${sentence} To pay, rest your finger on the Home button.`);
+      setMessage(`${spoken ? "" : `${sentence}${consentNote} `}To pay, rest your finger on the Home button. To refuse, do nothing.`);
       try {
         const result = await ask;
         proof = useNative
           ? { method: "device-key", challenge: request.challenge, signature: result as string }
           : { method: "passkey", challenge: request.challenge, response: result };
       } catch {
-        setArmed(false);
-        const text = "Not paid. Your fingerprint was not confirmed. Tap the screen to try again.";
+        // A website may not open the fingerprint prompt without a tap; the next tap goes straight to it.
+        const text = spoken && !useNative
+          ? "Tap the screen once, then rest your finger on the Home button to pay."
+          : "Not paid. Your fingerprint was not confirmed. Tap the screen to try again.";
+        setArmed(spoken && !useNative);
         setMessage(text);
         say(text);
         return;
       }
     } else if (!armed) {
+      // No fingerprint: a voice "pay" or a first tap only arms; a physical tap pays.
       setArmed(true);
+      if (spoken) {
+        setMessage("Tap the screen to pay. To refuse, do nothing.");
+        say("Tap the screen to pay.");
+        return;
+      }
       sayOurs({ what: "asking", id: request.id }, sentence);
       setMessage(`${sentence}${consentNote} Tap again to pay. To refuse, do nothing.`);
       setTimeout(() => say("Tap again to pay."), 9000);
@@ -430,24 +498,40 @@ function Approve({
     ? "Getting the exact amount from your wallet…"
     : busy
       ? "Paying. Please wait."
-      : armed
-        ? needsFinger
-          ? "Rest your finger on the Home button to pay."
-          : "Tap again to pay. To refuse, do nothing."
-        : needsFinger
-          ? "Tap anywhere, then rest your finger on the Home button."
-          : "Tap anywhere to hear this request.";
+      : hearing === "speaking"
+        ? "Reading the request…"
+        : hearing === "listening"
+          ? "Listening. Say “pay” or “no”."
+          : hearing === "thinking"
+            ? "Checking what you said…"
+            : armed
+              ? needsFinger
+                ? "Rest your finger on the Home button to pay."
+                : "Tap again to pay. To refuse, do nothing."
+              : voiceAnswers
+                ? "Tap anywhere to hear the request, then say “pay” or “no”."
+                : needsFinger
+                  ? "Tap anywhere, then rest your finger on the Home button."
+                  : "Tap anywhere to hear this request.";
+
+  const icon = hearing === "listening" ? "mic" : armed && needsFinger ? "finger" : armed ? "check" : "speaker";
 
   return (
     <div className="takeover" role="dialog" aria-modal="true" aria-label="Payment request">
-      <button ref={buttonRef} className={`approve ${armed ? "armed" : ""}`} onClick={() => void activate()} disabled={busy} aria-describedby="approve-how">
+      <button
+        ref={buttonRef}
+        className={`approve ${armed || hearing === "listening" ? "armed" : ""}`}
+        onClick={() => void activate()}
+        disabled={busy}
+        aria-describedby="approve-how"
+      >
         <Avatar name={request.merchantName} />
         {!request.knownPayee && <span className="new-tag">New person</span>}
         <span className="who">{request.merchantName} is asking for</span>
         <span className="amount">{formatAmount(request.receiveAmount ?? request.requested)}</span>
         {request.debitAmount && <span className="debit">{formatAmount(request.debitAmount)} will leave your account</span>}
         <span className="how" id="approve-how">
-          <Icon name={armed && needsFinger ? "finger" : armed ? "check" : "speaker"} size={26} />
+          <Icon name={icon} size={26} />
           {instruction}
         </span>
       </button>
@@ -547,6 +631,18 @@ function Home(props: {
             <span>
               Natural voice for requests and results (ElevenLabs, or Spitch for Igbo). Needs internet; if it is slow, the device&apos;s own English voice is
               used.
+            </span>
+          </label>
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={props.prefs.listen}
+              disabled={!props.prefs.on}
+              onChange={(e) => props.setPrefs({ ...props.prefs, listen: e.target.checked })}
+            />
+            <span>
+              Answer by voice. After a request is read out, say &quot;pay&quot; or &quot;no&quot; in your language. Saying pay only asks for your fingerprint;
+              your voice never moves money. Uses the microphone for a few seconds; the recording is not kept.
             </span>
           </label>
           <label htmlFor="lang">Language for requests and results</label>
