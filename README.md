@@ -2,7 +2,7 @@
 
 CU Next Gen Hackathon 2026, Track 2: Inclusive Payments and Financial Access. Built on Interledger Open Payments.
 
-> **Status, 16 Nov 2026, night:** on the Interledger test wallet, through the hosted app: a one-time payment with consent on the wallet's page, a weekly spending limit set once, a payment approved inside the app under that limit, and the wallet refusing a payment over it. "Stop everything" has so far run only against the SIMULATED wallet.
+> **Status, 17 Nov 2026, night:** on the Interledger test wallet, through the hosted app: a one-time payment with consent on the wallet's page, a weekly spending limit set once, payments approved inside the app under that limit (including with Touch ID on an iPad), and the wallet refusing a payment over it. The customer can talk about a request by voice in five languages. "Stop everything" has so far run only against the SIMULATED wallet. The native iPad app is built and installs, but iPadOS has not yet let it open (see Limitations).
 
 Hosted: https://pay-alone.vercel.app (seller: `/merchant`, customer: `/wallet`).
 
@@ -56,7 +56,7 @@ Code: `src/lib/op/real.ts` (the SDK calls), `src/lib/domain.ts` (the journey), `
 | Failure states: unknown pay code, bad amount, expired request, consent refused, over limit, wallet unreachable | yes (screens and handling) | failures triggered on the pretend wallet |  |
 | Approval tied to one quote and amount, single use | yes |  |  |
 | Fingerprint approval on the website (WebAuthn passkey, Touch ID) | yes: once set up, every payment needs it and a tap alone is refused. **Paid for real on the owner's iPad Air 3 with Touch ID** (17 Nov). iPadOS shows its own passkey sheet first; a website cannot skip it |  |  |
-| Native iPad app with instant Touch ID (`ios/`) | written: a thin native shell whose Secure Enclave key, usable only after Touch ID, signs each approval; the server verifies it. **Built in the cloud; not yet installed or tested on the iPad** |  |  |
+| Native iPad app with instant Touch ID (`ios/`) | written: a thin native shell whose Secure Enclave key, usable only after Touch ID, signs each approval; the server verifies it. Built in the cloud and **installed on the owner's iPad with a free Apple ID, but iPadOS's "Verify App" step has not succeeded yet**, so it has not opened. A bare test app fails the same way, so the block is the certificate check, not this app's code |  |  |
 | Spoken read-back of requests, results and what is left | yes: ElevenLabs (English, Pidgin, Yoruba, Hausa) and Spitch (Igbo), with the device's English voice as fallback. Non-English wording **not yet checked by a native speaker** |  |  |
 | Talk about a request by voice: ask "who is this?", "how much is left?", "say again", "help"; answer "pay" or "no" (any of the five languages) | yes: Spitch (Yoruba, Igbo, Hausa) or ElevenLabs (English, Pidgin) turns the answer into text. "pay" only opens the fingerprint prompt; "no" refuses; the app answers questions from its own records and keeps listening; anything it cannot understand twice ends the conversation. Starts without a tap inside the iPad app. Tested on production with the app's own recorded sentences, not yet with a human voice on the iPad |  |  |
 | Other spoken commands (hear history, read the pay code) |  |  | yes |
@@ -69,6 +69,17 @@ Code: `src/lib/op/real.ts` (the SDK calls), `src/lib/domain.ts` (the journey), `
 | Customer starts a payment themselves; spoken commands |  |  | yes |
 | USSD / feature-phone access |  |  | yes (not started) |
 | Hosted URL and deployed storage | yes (Vercel and Supabase) |  |  |
+
+## Try it (judges)
+**Hosted, real test wallet:** open https://pay-alone.vercel.app/merchant (seller) on one device and https://pay-alone.vercel.app/wallet (customer) on another, for example a laptop and a phone or tablet.
+1. Customer: set up the device (the customer wallet address is filled in). Note the six-digit pay code.
+2. Seller: type the pay code and an amount such as 0.01, and send.
+3. Customer: the request fills the screen. Tap once: it is read aloud, then the app listens. Ask "who is this?" or "how much is left?", then say "pay" (or tap twice) or "no". Allow the microphone when asked.
+4. With no spending limit, the payment goes to the wallet's own consent page. That page needs the test wallet account that owns the customer address, so a judge cannot finish this step on the hosted demo; the 3-minute video shows it, and `BUILD_LOG.md` records each real run. To run every step yourself with your own test wallet, use the local setup below with your own keys.
+
+**Simulated, every step, no accounts:** the local setup below with `npm run dev:mock`. A yellow SIMULATED banner shows on every screen.
+
+The demo script is in `docs/DEMO_SCRIPT.md`.
 
 ## Run it locally
 Needs Node 20 or newer.
@@ -105,6 +116,8 @@ npm test
 The website is the prototype judges can reproduce. For the live demo there is also a small native iPad app in `ios/`, so the fingerprint is Apple's ordinary Touch ID prompt instead of the website passkey sheet. It is built without a Mac on GitHub's macOS runners (`.github/workflows/ios.yml`, unsigned) and installed with Sideloadly using a free Apple ID (the app then runs for 7 days). It loads the same hosted app; only the fingerprint step differs.
 
 ## Limitations
+- The native iPad app has not opened on the owner's iPad: iPadOS's online "Verify App" check for the free developer certificate fails on the owner's mobile connection (also with a VPN, after a network reset, and for a bare test app). It will be retried on Wi-Fi. The website version does everything the app does except the plain Touch ID prompt and the no-tap start.
+- Voice answers are matched against short word lists per language (written by Claude, not checked by a native speaker). Only answers of nine words or fewer count; "pay" opens the fingerprint prompt and never pays by itself.
 - When the wallet refuses a payment over the limit it does not say why (HTTP 403 "unauthorized"). The app's "over your limit" explanation comes from its own record.
 - History shows only payments made through this app.
 - The consent page belongs to the wallet provider. We cannot restyle it, and its screen-reader accessibility is untested.
