@@ -75,3 +75,11 @@ video.scan { width: 100%; border-radius: 12px; border: 2px solid var(--line); ba
 
 /* The SIMULATED banner must stay visible on the approval screen too. */
 .simulated .takeover { top: 3rem; }
+
+ol.history { list-style: none; padding: 0; margin: 0.8rem 0 0; }
+ol.history li { display: flex; gap: 0.8rem; padding: 0.8rem 0; border-top: 1px solid #c9cfda; }
+ol.history li .mark { font-size: 1.4rem; font-weight: 800; width: 1.6rem; flex: 0 0 auto; }
+ol.history li.good .mark { color: var(--good); }
+ol.history li.bad .mark { color: var(--bad); }
+ol.history li .title { font-weight: 700; margin: 0; }
+ol.history li p { margin: 0.15rem 0; }

@@ -40,3 +40,9 @@ Dated entries, newest last. Record what was built, what was run against the real
   - Callback hash verified, `grant.continue` returned a token, `outgoingPayment.create` succeeded (request status `paid`, outgoing payment id stored).
   - Independent check from the seller side: the seller app re-read the incoming payment from Mama Chris's wallet: receivedAmount USD 100 (scale 2), status received.
   - Still to confirm by eye: the payment appears in both wallets' transaction lists on wallet.interledger-test.dev.
+- 2026-11-17 04:58 WAT: **Spending limit on the real test wallet.** Owner set a USD 5.00 weekly limit (one consent on the wallet's page, interval `R/2026-11-16T20:52:33Z/P1W`, no receiver).
+  - Request for USD 7.00: the wallet **refused** `outgoingPayment.create` with HTTP 403, code/description "unauthorized". It gave no reason. The app rotated the token once and retried; refused again. By our own record the payment would exceed the limit, so the app says the wallet refused and that, by our record, it is over the limit. We do not claim the wallet said "limit".
+  - Request for USD 2.00 at 04:59: paid **inside the app with no redirect**, under the standing grant. Left of limit by our record: USD 3.00.
+  - Open item: the `grantSpentDebitAmount` the wallet returned with that payment was 0, which does not match. Meaning unclear (maybe the amount before this payment). The app no longer displays it.
+- 2026-11-17: Added history on both apps (payments through this app only; the wallet's transaction list is the full record), with a spoken summary of the last three on the customer side.
+- 2026-11-17: Privacy fix: the seller was being shown the customer's own failure text, which could include the customer's limit. The seller now sees only neutral reasons ("the customer's wallet did not make this payment").

@@ -2,7 +2,7 @@
 
 CU Next Gen Hackathon 2026, Track 2: Inclusive Payments and Financial Access. Built on Interledger Open Payments.
 
-> **Status, 16 Nov 2026, night:** one real payment (USD 1.00) has been made app to app on the Interledger test wallet through the hosted app, with one-time consent on the wallet's own page. The spending limit, over-limit refusal and stop everything have so far run only against the SIMULATED wallet.
+> **Status, 16 Nov 2026, night:** on the Interledger test wallet, through the hosted app: a one-time payment with consent on the wallet's page, a weekly spending limit set once, a payment approved inside the app under that limit, and the wallet refusing a payment over it. "Stop everything" has so far run only against the SIMULATED wallet.
 
 Hosted: https://pay-alone.vercel.app (seller: `/merchant`, customer: `/wallet`).
 
@@ -50,13 +50,14 @@ Code: `src/lib/op/real.ts` (the SDK calls), `src/lib/domain.ts` (the journey), `
 | Seller requests, customer approves, payment made | yes, on the real test wallet (one-time consent) | also runs on the pretend wallet |  |
 | Amounts taken from the quote, integers in minor units | yes |  |  |
 | One-time consent on the wallet's page, with callback hash check | yes, on the real test wallet |  |  |
-| Spending limit set once, then approval inside the app |  | yes | real test wallet |
-| Wallet refuses a payment over the limit |  | yes (the pretend wallet refuses) | confirm the real wallet enforces it |
+| Spending limit set once, then approval inside the app | yes, on the real test wallet |  |  |
+| Wallet refuses a payment over the limit | yes, on the real test wallet (it answers 403 "unauthorized" without a reason; the app explains it from its own record) |  |  |
 | "Stop everything" cancels the permission |  | yes | real test wallet |
 | Failure states: unknown pay code, bad amount, expired request, consent refused, over limit, wallet unreachable | yes (screens and handling) | failures triggered on the pretend wallet |  |
 | Approval tied to one quote and amount, single use | yes (confirm action) |  | fingerprint passkey signing the same challenge |
 | Spoken read-back | placeholder: the device's built-in English voice |  | Spitch / ElevenLabs, Nigerian languages |
 | Pay code as QR, six digits, spoken aloud, lock-screen picture | yes |  |  |
+| Payment history on both apps, spoken summary for the customer | yes (payments through this app only) |  |  |
 | Seller scans the pay code with a camera | written, **not yet tested on a device** |  |  |
 | Screen-reader testing (VoiceOver on iPad) |  |  | not done yet |
 | Notification on the locked device |  |  | yes |
@@ -97,7 +98,8 @@ npm test
 4. Run `npm run dev`.
 
 ## Limitations
-- So far one real payment has been made. The spending limit has not yet been tried on the real wallet.
+- When the wallet refuses a payment over the limit it does not say why (HTTP 403 "unauthorized"). The app's "over your limit" explanation comes from its own record.
+- History shows only payments made through this app.
 - The consent page belongs to the wallet provider. We cannot restyle it, and its screen-reader accessibility is untested.
 - Approval needs the device unlocked. Nothing can approve money from a locked screen.
 - "Left of your limit" is our own record plus what the wallet reports after a payment. It is not an account balance; Open Payments has no balance endpoint.

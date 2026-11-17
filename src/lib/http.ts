@@ -17,7 +17,7 @@ export function fail(e: unknown) {
   }
   if (e instanceof OpError) {
     const d = e.detail;
-    const walletSaid = d ? [d.status, d.code, d.description].filter(Boolean).join(" ") || undefined : undefined;
+    const walletSaid = d ? [...new Set([d.status, d.code, d.description].filter(Boolean).map(String))].join(" ") || undefined : undefined;
     const status = e.kind === "wallet_unreachable" ? 503 : e.kind === "not_found" ? 404 : 502;
     return ok({ error: { kind: e.kind, message: e.message, walletSaid } }, { status });
   }

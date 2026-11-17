@@ -42,8 +42,21 @@ interface RequestView {
   needsWalletConsent: boolean;
 }
 
+interface HistoryItem {
+  id: string;
+  at: string;
+  merchantName: string;
+  status: RequestView["status"];
+  requested: Amount;
+  debitAmount?: Amount;
+  receiveAmount?: Amount;
+  approvedVia?: "limit" | "wallet-page";
+  failure?: { kind: string; message: string; walletSaid?: string };
+}
+
 interface State {
   simulated: boolean;
+  history?: HistoryItem[];
   customer: CustomerView | null;
   suggestedWalletAddress?: string;
   pending?: RequestView | null;
@@ -166,6 +179,7 @@ export default function WalletPage() {
   return (
     <Home
       customer={state.customer}
+      history={state.history ?? []}
       notice={notice}
       loadError={loadError}
       appVoice={appVoice}
@@ -318,6 +332,7 @@ function Approve({ request, say, onDone }: { request: RequestView; say: (t: stri
 
 function Home(props: {
   customer: CustomerView;
+  history: HistoryItem[];
   notice: { text: string; good: boolean; walletSaid?: string } | null;
   loadError: ApiError | null;
   appVoice: boolean;
@@ -367,6 +382,8 @@ function Home(props: {
       </section>
 
       <Limit cap={cap} customer={customer} refresh={props.refresh} say={say} setNotice={props.setNotice} />
+
+      <History items={props.history} say={say} />
 
       <section className="card" aria-labelledby="set-h">
         <h2 id="set-h">Settings</h2>
@@ -456,12 +473,6 @@ function Limit({
             <dd>{formatAmount(cap.spent)}</dd>
             <dt>Left of your limit</dt>
             <dd className="amount">{formatAmount(cap.left)}</dd>
-            {cap.walletReportedSpent && (
-              <>
-                <dt>Spent under this limit, as last reported by the wallet</dt>
-                <dd>{formatAmount(cap.walletReportedSpent)}</dd>
-              </>
-            )}
           </dl>
           <p className="muted">
             Counts only payments made through this app since you set the limit on {new Date(cap.grantedAt).toLocaleDateString()}. Payments made before that, or outside this app, are not
@@ -548,5 +559,81 @@ function LockScreenPicture({ payCode }: { payCode: string }) {
       </button>
       {problem && <p role="alert">{problem}</p>}
     </>
+  );
+}
+
+// ---------- history ----------
+
+const when = (iso: string) =>
+  new Date(iso).toLocaleString(undefined, { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
+
+function historyLine(h: HistoryItem): { title: string; detail: string; good: boolean } {
+  const amount = h.debitAmount ?? h.requested;
+  switch (h.status) {
+    case "paid":
+      return {
+        title: `Paid ${formatAmount(amount)} to ${h.merchantName}`,
+        detail: h.approvedVia === "limit" ? "Approved in this app, under your limit." : "Approved on your wallet's page.",
+        good: true,
+      };
+    case "declined":
+      return { title: `Not paid: ${h.merchantName} asked for ${formatAmount(h.receiveAmount ?? h.requested)}`, detail: h.failure?.message ?? "Refused.", good: false };
+    case "expired":
+      return { title: `Not paid: ${h.merchantName} asked for ${formatAmount(h.receiveAmount ?? h.requested)}`, detail: "The request ran out of time.", good: false };
+    case "failed":
+      return { title: `Not paid: ${formatAmount(amount)} to ${h.merchantName}`, detail: h.failure?.message ?? "The payment failed.", good: false };
+    default:
+      return { title: `${h.merchantName}: ${formatAmount(amount)}`, detail: "In progress.", good: false };
+  }
+}
+
+function spokenHistory(h: HistoryItem): string {
+  const amount = h.debitAmount ?? h.requested;
+  const day = new Date(h.at).toLocaleString(undefined, { weekday: "long", hour: "numeric", minute: "2-digit" });
+  if (h.status === "paid") return `${day}: paid ${speakAmount(amount)} to ${h.merchantName}.`;
+  if (h.status === "failed" && h.failure?.kind === "limit_exceeded") return `${day}: ${h.merchantName} asked for ${speakAmount(amount)}. Your wallet refused it. Over your limit.`;
+  return `${day}: ${h.merchantName} asked for ${speakAmount(h.receiveAmount ?? h.requested)}. Not paid.`;
+}
+
+function History({ items, say }: { items: HistoryItem[]; say: (t: string) => void }) {
+  return (
+    <section className="card" aria-labelledby="hist-h">
+      <h2 id="hist-h">Your payments</h2>
+      <p className="muted">Payments and requests through this app, newest first. Your wallet&apos;s own transaction list is the full record.</p>
+      {items.length === 0 ? (
+        <p>No payments yet.</p>
+      ) : (
+        <>
+          <button
+            className="wide secondary"
+            onClick={() => {
+              const lastThree = items.slice(0, 3).map(spokenHistory).join(" ");
+              say(`Your last ${Math.min(3, items.length)} payments. ${lastThree}`);
+            }}
+          >
+            Say my last payments aloud
+          </button>
+          <ol className="history">
+            {items.map((h) => {
+              const line = historyLine(h);
+              return (
+                <li key={h.id} className={line.good ? "good" : "bad"}>
+                  <span className="mark" aria-hidden="true">
+                    {line.good ? "✓" : "✕"}
+                  </span>
+                  <div>
+                    <p className="title">{line.title}</p>
+                    <p className="muted">
+                      <time dateTime={h.at}>{when(h.at)}</time>. {line.detail}
+                    </p>
+                    {h.failure?.walletSaid && <p className="muted">The wallet said: {h.failure.walletSaid}</p>}
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+        </>
+      )}
+    </section>
   );
 }

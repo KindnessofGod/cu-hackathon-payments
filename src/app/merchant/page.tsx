@@ -9,6 +9,16 @@ interface MerchantData {
   simulated: boolean;
   merchant: { name: string; walletAddress: string; assetCode: string; assetScale: number };
   recentCustomers: { payCode: string; name: string }[];
+  history: {
+    id: string;
+    at: string;
+    status: string;
+    requested: Amount;
+    receiveAmount?: Amount;
+    customerName: string;
+    customerPayCode: string;
+    reason?: string;
+  }[];
 }
 
 interface View {
@@ -176,6 +186,43 @@ export default function MerchantPage() {
           <button className="wide" onClick={reset}>
             {view.status === "waiting" ? "Cancel and start a new request" : "New request"}
           </button>
+        </section>
+      )}
+      {data && data.history.length > 0 && (
+        <section className="card" aria-labelledby="mhist-h">
+          <h2 id="mhist-h">Recent requests</h2>
+          <p className="muted">Requests made from this app, newest first. Your wallet&apos;s own transaction list is the full record.</p>
+          <ol className="history">
+            {data.history.map((h) => {
+              const good = h.status === "paid";
+              const label =
+                h.status === "paid"
+                  ? `Paid ${formatAmount(h.receiveAmount ?? h.requested)}`
+                  : h.status === "declined"
+                    ? "Customer said no"
+                    : h.status === "expired"
+                      ? "Ran out of time"
+                      : h.status === "failed"
+                        ? "Not paid"
+                        : "In progress";
+              return (
+                <li key={h.id} className={good ? "good" : "bad"}>
+                  <span className="mark" aria-hidden="true">
+                    {good ? "✓" : label === "In progress" ? "…" : "✕"}
+                  </span>
+                  <div>
+                    <p className="title">
+                      {label}: asked {h.customerName} ({h.customerPayCode}) for {formatAmount(h.requested)}
+                    </p>
+                    <p className="muted">
+                      <time dateTime={h.at}>{new Date(h.at).toLocaleString(undefined, { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}</time>
+                      {h.reason ? `. ${h.reason}` : ""}
+                    </p>
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
         </section>
       )}
     </main>

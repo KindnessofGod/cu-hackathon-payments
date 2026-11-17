@@ -6,6 +6,7 @@ import { exceedsCap, formatAmount, parseMajor, remainingOfCap, type Amount } fro
 import { gateway, isSimulated, OpError, type OpErrorKind, type QuoteInfo, type WalletInfo } from "./op";
 import { verifyInteractionHash } from "./op/hash";
 import { MOCK_HOST } from "./op/mock";
+import { normalizeWalletUrl } from "./op/real";
 import { open, randomToken, seal, sha256 } from "./secret";
 import { getStore } from "./store";
 
@@ -109,7 +110,7 @@ const REQUEST_TTL_MS = Number(process.env.REQUEST_TTL_SECONDS ?? 180) * 1000;
 function failureFrom(e: unknown): Failure {
   if (e instanceof OpError) {
     const d = e.detail;
-    const walletSaid = d ? [d.status, d.code, d.description].filter(Boolean).join(" ") : undefined;
+    const walletSaid = d ? [...new Set([d.status, d.code, d.description].filter(Boolean).map(String))].join(" ") : undefined;
     return { kind: e.kind, message: e.message, walletSaid: walletSaid || undefined };
   }
   return { kind: "unknown", message: e instanceof Error ? e.message : "Something went wrong." };
@@ -183,6 +184,17 @@ export async function createRequest(payCode: string, amountMajor: string): Promi
 
 export type MerchantStatus = "waiting" | "received" | "declined" | "expired" | "failed";
 
+/**
+ * What the seller is told when a payment does not happen. Deliberately vague: the seller must not
+ * learn the customer's limit or why their wallet refused.
+ */
+function sellerReason(status: MerchantStatus | RequestStatus): string | undefined {
+  if (status === "declined") return "The customer said no, or did not confirm. No money moved.";
+  if (status === "failed") return "The customer's wallet did not make this payment. No money moved.";
+  if (status === "expired") return "No money moved.";
+  return undefined;
+}
+
 /** What the seller sees. The received amount is read from the seller's wallet, not from what was typed. */
 export async function merchantView(requestId: string) {
   const request = await store().get<PaymentRequest>("requests", requestId);
@@ -206,7 +218,7 @@ export async function merchantView(requestId: string) {
     received: incoming.receivedAmount,
     customerPayCode: request.customerPayCode,
     expiresAt: request.expiresAt,
-    reason: status === "failed" || status === "declined" ? request.failure?.message : undefined,
+    reason: sellerReason(status),
   };
 }
 
@@ -550,13 +562,69 @@ async function pay(customer: Customer, r: PaymentRequest, accessToken: string): 
     // The wallet is the one refusing. If it did not say why, our own record can still tell the user the likely reason.
     if (cap && failure.kind === "grant_rejected" && exceedsCap(cap.limit, capSpent(cap), quote.debitAmount)) {
       failure.kind = "limit_exceeded";
-      failure.message = `The wallet refused this payment. By our record it would take you over your limit of ${formatAmount(cap.limit)}.`;
+      failure.message = `Your wallet refused this payment. It did not say why, but by our record it would take you over your limit of ${formatAmount(cap.limit)}.`;
     }
     r.status = "failed";
     r.failure = failure;
   }
   await store().put("requests", r.id, r);
   return r;
+}
+
+// ---------- history (payments made through this app only) ----------
+
+const HISTORY_LIMIT = 20;
+
+export async function customerHistory(customer: Customer) {
+  const mine = (await store().list<PaymentRequest>("requests"))
+    .filter((r) => r.customerId === customer.id)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .slice(0, HISTORY_LIMIT);
+  const out = [];
+  for (const r of mine) {
+    const current = await expireIfDue(r);
+    if (current.status === "waiting" || current.status === "quoted") continue; // still open: shown as the request itself
+    out.push(historyItem(current));
+  }
+  return out;
+}
+
+export async function merchantHistory() {
+  const wallet = normalizeWalletUrl(merchantWalletUrl());
+  const customers = await store().list<Customer>("customers");
+  const mine = (await store().list<PaymentRequest>("requests"))
+    .filter((r) => normalizeWalletUrl(r.merchantWalletId) === wallet)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .slice(0, HISTORY_LIMIT);
+  return mine.map((r) => {
+    const h = historyItem(r);
+    return {
+      id: h.id,
+      at: h.at,
+      status: h.status,
+      requested: h.requested,
+      receiveAmount: h.status === "paid" ? h.receiveAmount : undefined,
+      reason: sellerReason(h.status),
+      customerName: customers.find((c) => c.id === r.customerId)?.wallet.publicName ?? "Customer",
+      customerPayCode: r.customerPayCode,
+    };
+  });
+}
+
+function historyItem(r: PaymentRequest) {
+  const open = r.status === "waiting" || r.status === "quoted" || r.status === "consent" || r.status === "paying";
+  const expired = open && Date.parse(r.expiresAt) < Date.now();
+  return {
+    id: r.id,
+    at: r.paid?.at ?? r.createdAt,
+    merchantName: r.merchantName,
+    status: expired ? ("expired" as const) : r.status,
+    requested: r.requested,
+    debitAmount: r.paid?.debitAmount ?? r.quote?.debitAmount,
+    receiveAmount: r.paid?.receiveAmount ?? r.quote?.receiveAmount,
+    approvedVia: r.status === "paid" ? (r.consentBy === "cap" ? ("limit" as const) : ("wallet-page" as const)) : undefined,
+    failure: r.failure ? { kind: r.failure.kind, message: r.failure.message, walletSaid: r.failure.walletSaid } : undefined,
+  };
 }
 
 // ---------- what a browser is allowed to see ----------
