@@ -27,7 +27,7 @@ Everything shown is the hosted app on the **real Interledger test wallet** (test
 
 **2:20-2:45: Open Payments under the hood.** One slide or the README diagram: incoming payment (seller) > quote (customer) > one interactive grant with `limits.debitAmount` and a weekly `interval` > outgoing payments under that grant, token rotation, callback hash check. Two separate apps, two wallets, two keys.
 
-**2:45-3:00: Honest close.** "Working: everything you saw, on the test wallet. Simulated: nothing in this video. Not yet: Igbo in the live voice (ElevenLabs does not support it; Igbo users get English), lock-screen alerts (built and accepted by Apple's push service, but not delivered on our test iPad), screen-reader testing with blind users, and native-speaker checks of the Yoruba, Igbo, Hausa and Pidgin wording. Next: test with blind users at a Lagos market."
+**2:45-3:00: Honest close.** "Working: everything you saw, on the test wallet. Simulated: nothing in this video. Not yet: Igbo in the live voice (ElevenLabs does not support it; Igbo users get English today; next we build an Igbo conversation with Spitch), lock-screen alerts (built and accepted by Apple's push service, but not delivered on our test iPad), screen-reader testing with blind users, and native-speaker checks of the Yoruba, Igbo, Hausa and Pidgin wording. Next: test with blind users at a Lagos market."
 
 ## If something fails live
 - Live voice does not connect (orb stays amber): the app falls back to the simpler voice (reads the request, listens for "pay" or "no"). Say so. Background audio (music, a podcast) confuses it: pause it before recording.
