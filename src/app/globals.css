@@ -229,3 +229,16 @@ video.scan { width: 100%; border-radius: 16px; border: 2px solid var(--line); ba
 @media (prefers-reduced-motion: reduce) {
   .takeover .orb .orb-ring, .takeover .orb.connecting .orb-core { animation: none; }
 }
+
+/* Banking assistant on the home screen */
+.assistant-card .assistant-start {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  font-size: 1.35rem;
+  min-height: 4.5rem;
+}
+.takeover .assistant-live {
+  cursor: default;
+}

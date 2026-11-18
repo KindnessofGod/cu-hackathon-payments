@@ -2,6 +2,7 @@ import { capSummary, getRequestFor, isOpen } from "@/lib/domain";
 import { fail, requireCustomer } from "@/lib/http";
 import { exceedsCap, remainingOfCap, speakAmount } from "@/lib/money";
 import { askingSentence, isLang, type Lang } from "@/lib/voice/sentences";
+import { AGENT_LANG, agentToken } from "@/lib/voice/agentToken";
 
 /**
  * Starts a live voice conversation (ElevenLabs Agents) about one waiting request.
@@ -11,9 +12,6 @@ import { askingSentence, isLang, type Lang } from "@/lib/voice/sentences";
  */
 const AGENT_ID = process.env.ELEVENLABS_AGENT_ID || "agent_3901m7nzvq1teyj9pm23e4gfqtmz";
 
-// Languages the ElevenLabs agent accepts. Igbo is not one of them (checked 18 Nov), and Pidgin has no
-// code of its own; both run in English, with the agent told which language the customer chose.
-const AGENT_LANG: Record<Lang, string> = { en: "en", pcm: "en", yo: "yo", ig: "en", ha: "ha" };
 const NAMES: Record<Lang, string> = { en: "English", pcm: "Nigerian Pidgin", yo: "Yoruba", ig: "English (the customer chose Igbo, which this voice cannot speak yet)", ha: "Hausa" };
 
 export async function GET(req: Request) {
@@ -24,18 +22,8 @@ export async function GET(req: Request) {
     const customer = await requireCustomer();
     const r = await getRequestFor(customer, q.get("id") ?? "");
     if (!isOpen(r) || !r.quote) return Response.json({ error: { kind: "not_ready", message: "This request is not waiting for an answer." } }, { status: 409 });
-    const key = process.env.ELEVENLABS_API_KEY;
-    if (!key) return Response.json({ error: { kind: "unavailable", message: "Live voice is not set up." } }, { status: 503 });
-
-    const res = await fetch(`https://api.elevenlabs.io/v1/convai/conversation/token?agent_id=${AGENT_ID}`, {
-      headers: { "xi-api-key": key },
-      signal: AbortSignal.timeout(8000),
-    });
-    if (!res.ok) {
-      console.error("agent token failed:", res.status, (await res.text()).slice(0, 200));
-      return Response.json({ error: { kind: "unavailable", message: "Live voice is not available right now." } }, { status: 502 });
-    }
-    const { token } = (await res.json()) as { token: string };
+    const token = await agentToken(AGENT_ID);
+    if (!token) return Response.json({ error: { kind: "unavailable", message: "Live voice is not available right now." } }, { status: 502 });
 
     const { receiveAmount, debitAmount } = r.quote;
     const cap = capSummary(customer.cap);

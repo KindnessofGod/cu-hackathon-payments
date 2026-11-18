@@ -13,20 +13,21 @@ export type LiveSession = {
 };
 
 export type LiveOptions = {
-  requestId: string;
+  /** Server route that returns the token and facts, e.g. /api/voice/agent?id=… (lang is added). */
+  startUrl: string;
   lang: string;
-  native: boolean;
   onMode: (m: LiveMode) => void;
   onLine: (who: "you" | "app", text: string) => void;
   onEnd: (reason: "agent" | "user" | "error", message?: string) => void;
-  approve: () => Promise<string>;
-  refuse: () => Promise<string>;
+  /** Client tools the agent may call (the payment agent: approve_payment and refuse_payment). */
+  tools?: Record<string, () => Promise<string>>;
 };
 
 type Start = { token: string; language: string; dynamicVariables: Record<string, string> };
 
 async function fetchStart(o: LiveOptions, lang: string): Promise<Start> {
-  const res = await fetch(`/api/voice/agent?id=${encodeURIComponent(o.requestId)}&lang=${lang}&native=${o.native ? "1" : "0"}`, { cache: "no-store" });
+  const sep = o.startUrl.includes("?") ? "&" : "?";
+  const res = await fetch(`${o.startUrl}${sep}lang=${lang}`, { cache: "no-store" });
   if (!res.ok) throw new Error(`live voice unavailable (${res.status})`);
   return (await res.json()) as Start;
 }
@@ -38,10 +39,7 @@ async function open(o: LiveOptions, s: Start): Promise<VoiceConversation> {
     textOnly: false,
     dynamicVariables: s.dynamicVariables,
     overrides: { agent: { language: s.language as never, firstMessage: s.dynamicVariables.first_message } },
-    clientTools: {
-      approve_payment: () => o.approve(),
-      refuse_payment: () => o.refuse(),
-    },
+    clientTools: o.tools ?? {},
     onModeChange: ({ mode }) => o.onMode(mode),
     onMessage: (m) => {
       if (m.message) o.onLine(m.role === "user" ? "you" : "app", m.message);

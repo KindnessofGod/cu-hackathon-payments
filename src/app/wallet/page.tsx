@@ -453,9 +453,8 @@ function Approve({
     setMessage("Connecting the voice…");
     try {
       liveRef.current = await startLive({
-        requestId: request.id,
+        startUrl: `/api/voice/agent?id=${encodeURIComponent(request.id)}&native=${inNativeApp() ? "1" : "0"}`,
         lang: prefs.lang,
-        native: inNativeApp(),
         onMode: (m) => setLive(m),
         onLine: (who, text) => setTalk((t) => [...t, { who, text }]),
         onEnd: () => {
@@ -468,7 +467,8 @@ function Approve({
           if (r) onDone(r, true);
           else setMessage("The conversation ended. Tap the screen to talk again.");
         },
-        approve: async () => {
+        tools: {
+        approve_payment: async () => {
           toolText.current = "";
           const s = await activate(true);
           if (s === "done") return toolText.current || "not paid: the wallet did not answer.";
@@ -478,10 +478,11 @@ function Approve({
           }
           return s;
         },
-        refuse: async () => {
+        refuse_payment: async () => {
           const p = new Promise<string>((res) => (toolWait.current = res));
           void refuse();
           return p;
+        },
         },
       });
       setMessage("Talk naturally. Ask who is asking, how much is left, or say pay or no.");
@@ -781,6 +782,91 @@ function VoiceOrb({ session, mode }: { session: React.RefObject<LiveSession | nu
   );
 }
 
+// ---------- banking assistant ----------
+
+/**
+ * "Talk to Pay Alone": a live voice assistant on the home screen, any time. It knows only this customer's
+ * records in this app (limit, spending, who they paid, pay code) and how the app works. It has no tool
+ * that moves money. A payment request arriving closes it, because the request screen takes over.
+ */
+function Assistant({ lang, say }: { lang: Lang; say: (t: string) => void }) {
+  const [mode, setMode] = useState<LiveMode | "">("");
+  const [lines, setLines] = useState<{ who: "app" | "you"; text: string }[]>([]);
+  const [note, setNote] = useState("");
+  const session = useRef<LiveSession | null>(null);
+  const starting = useRef(false);
+
+  useEffect(() => () => void session.current?.end(), []);
+
+  async function start() {
+    if (starting.current || session.current) return;
+    starting.current = true;
+    setLines([]);
+    setNote("");
+    try {
+      session.current = await startLive({
+        startUrl: "/api/voice/assistant",
+        lang,
+        onMode: setMode,
+        onLine: (who, text) => setLines((l) => [...l, { who, text }]),
+        onEnd: () => {
+          session.current = null;
+          setMode("");
+        },
+      });
+    } catch (e) {
+      console.error(e);
+      session.current = null;
+      setMode("");
+      const text = "The voice assistant is not available right now. Please try again in a moment.";
+      setNote(text);
+      say(text);
+    } finally {
+      starting.current = false;
+    }
+  }
+
+  const label = mode === "connecting" ? "Connecting…" : mode === "speaking" ? "Speaking… you can interrupt any time" : mode === "listening" ? "Listening… talk naturally" : "";
+
+  if (!mode)
+    return (
+      <section className="card assistant-card" aria-labelledby="assist-h">
+        <button className="wide assistant-start" onClick={() => void start()}>
+          <Icon name="mic" size={26} />
+          <span id="assist-h">Talk to Pay Alone</span>
+        </button>
+        <p className="muted">Ask what is left of your limit, who you paid, your pay code, or how anything works. It cannot move money.</p>
+        {note && <p role="status">{note}</p>}
+      </section>
+    );
+
+  return (
+    <div className="takeover" role="dialog" aria-modal="true" aria-label="Talking to Pay Alone">
+      <div className="approve armed assistant-live">
+        <VoiceOrb session={session} mode={mode} />
+        <span className="who">Pay Alone</span>
+        <span className="how" role="status">
+          <Icon name="mic" size={26} />
+          {label}
+        </span>
+      </div>
+      {lines.length > 0 && (
+        <ol className="talk" aria-label="Conversation">
+          {lines.slice(-6).map((t, i) => (
+            <li key={i} className={t.who}>
+              <span className="sr-only">{t.who === "you" ? "You said: " : "Pay Alone said: "}</span>
+              {t.text}
+            </li>
+          ))}
+        </ol>
+      )}
+      <button className="refuse" onClick={() => void session.current?.end()}>
+        End conversation
+      </button>
+    </div>
+  );
+}
+
 // ---------- home ----------
 
 function Home(props: {
@@ -820,6 +906,8 @@ function Home(props: {
           </div>
         )}
         {props.loadError && <p role="alert">Cannot check for new requests: {props.loadError.message} Still trying.</p>}
+
+        <Assistant lang={props.prefs.lang} say={say} />
 
         <section className="card" aria-labelledby="code-h">
           <div className="paycode">
