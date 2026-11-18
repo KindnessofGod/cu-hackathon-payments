@@ -759,10 +759,10 @@ function Approve({
         setTimeout(() => window.location.assign(res.redirectUrl!), 300);
         return "redirect";
       }
-      done(res.request);
+      await done(res.request);
     } catch (e) {
       const err = errorText(e);
-      done({ ...request, status: "failed", failure: { kind: err.kind, message: err.message, walletSaid: err.walletSaid } });
+      await done({ ...request, status: "failed", failure: { kind: err.kind, message: err.message, walletSaid: err.walletSaid } });
     }
     return "done";
   }
@@ -776,10 +776,10 @@ function Approve({
     setBusy(true);
     try {
       const res = await api<{ request: RequestView }>(`/api/wallet/requests/${request.id}/decline`, { method: "POST" });
-      done(res.request);
+      await done(res.request);
     } catch (e) {
       const err = errorText(e);
-      done({ ...request, status: "failed", failure: { kind: err.kind, message: err.message } });
+      await done({ ...request, status: "failed", failure: { kind: err.kind, message: err.message } });
     }
   }
 

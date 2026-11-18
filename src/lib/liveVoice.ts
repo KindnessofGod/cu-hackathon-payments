@@ -40,6 +40,37 @@ async function fetchStart(o: LiveOptions, lang: string): Promise<Start> {
   return (await res.json()) as Start;
 }
 
+/**
+ * Saves the conversation in our own database, line by line and in order. Lines said before the
+ * conversation has its id are held until it does.
+ */
+function transcriptLog() {
+  let id = "";
+  const held: { who: "you" | "app" | "tool"; text: string }[] = [];
+  let chain = Promise.resolve();
+  const send = (who: "you" | "app" | "tool", text: string) => {
+    chain = chain
+      .then(() =>
+        fetch("/api/voice/transcript", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ conversationId: id, who, text }),
+        }).then(() => undefined),
+      )
+      .catch(() => undefined);
+  };
+  return {
+    setId(newId: string) {
+      id = newId;
+      for (const l of held.splice(0)) send(l.who, l.text);
+    },
+    add(who: "you" | "app" | "tool", text: string) {
+      if (id) send(who, text);
+      else held.push({ who, text });
+    },
+  };
+}
+
 function withTimeout<T>(p: Promise<T>, ms: number, onLate: (v: T) => void): Promise<T> {
   return new Promise((resolve, reject) => {
     let done = false;
@@ -62,18 +93,38 @@ function withTimeout<T>(p: Promise<T>, ms: number, onLate: (v: T) => void): Prom
   });
 }
 
-async function open(o: LiveOptions, s: Start, via: "webrtc" | "websocket", live: { connected: boolean }): Promise<VoiceConversation> {
+async function open(
+  o: LiveOptions,
+  s: Start,
+  via: "webrtc" | "websocket",
+  live: { connected: boolean },
+  log: ReturnType<typeof transcriptLog>,
+): Promise<VoiceConversation> {
+  // Every tool call and its result go into our own transcript too.
+  const tools: Record<string, (p: Record<string, unknown>) => Promise<string>> = {};
+  for (const [name, fn] of Object.entries(o.tools ?? {})) {
+    tools[name] = async (p) => {
+      log.add("tool", `${name}(${JSON.stringify(p ?? {})})`);
+      const result = await fn(p ?? {});
+      log.add("tool", `${name} -> ${result}`);
+      return result;
+    };
+  }
   const common = {
+    onConnect: ({ conversationId }: { conversationId: string }) => log.setId(conversationId),
     textOnly: false,
     dynamicVariables: s.dynamicVariables,
     // The opening sentence comes from the first_message dynamic variable; only the language is overridden.
     overrides: { agent: { language: s.language as never } },
-    clientTools: o.tools ?? {},
+    clientTools: tools,
     onModeChange: ({ mode }: { mode: "speaking" | "listening" }) => o.onMode(mode),
     onMessage: (m: { message: string; role: "user" | "agent" }) => {
       // Tone tags such as [happy] shape the voice; they are not shown as words.
       const text = m.role === "agent" ? stripAudioTags(m.message ?? "").replace(/\s{2,}/g, " ").trim() : (m.message ?? "");
-      if (text) o.onLine(m.role === "user" ? "you" : "app", text);
+      if (text) {
+        o.onLine(m.role === "user" ? "you" : "app", text);
+        log.add(m.role === "user" ? "you" : "app", m.message ?? "");
+      }
     },
     onDisconnect: (d: { reason: "error" | "agent" | "user"; message?: string }) => {
       if (!live.connected) return; // a failed first attempt is not the end of the conversation
@@ -133,7 +184,7 @@ export async function startLive(o: LiveOptions): Promise<LiveSession> {
       if (via === "webrtc" && !s.token) continue;
       if (via === "websocket" && !s.signedUrl) continue;
       try {
-        conv = await open(o, s, via, live);
+        conv = await open(o, s, via, live, transcriptLog());
         break;
       } catch (e) {
         lastError = e;
