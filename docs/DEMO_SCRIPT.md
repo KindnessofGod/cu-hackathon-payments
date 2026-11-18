@@ -3,7 +3,7 @@
 Everything shown is the hosted app on the **real Interledger test wallet** (test money). Nothing in this script is simulated; if a step fails on the day, say so and show the recorded run instead of faking it.
 
 ## Before recording
-- **iPad (customer):** charged and on a network that resolves the test wallet (if pages fail with "server can't be found", switch DNS, for example the 1.1.1.1 app). `https://payalone.vercel.app/wallet` open (Home Screen icon if added). Pay Alone added to the Home Screen and opened from its icon (Share > Add to Home Screen; link it with "Get a link code" in Safari), "Turn on alerts" done and the test alert heard on the lock screen. Fingerprint set up, weekly limit set, volume up, silent switch off. Voice language chosen in "Voice and settings". Passwords provider set to Apple Passwords (Settings > Apps > Safari > AutoFill & Passwords), so the fingerprint step is one Apple sheet.
+- **iPad (customer):** charged and on a network that resolves the test wallet (if pages fail with "server can't be found", switch DNS, for example the 1.1.1.1 app). `https://payalone.vercel.app/wallet` open (Home Screen icon if added). Fingerprint set up, weekly limit set, volume up, silent switch off. Voice language chosen in "Voice and settings". Passwords provider set to Apple Passwords (Settings > Apps > Safari > AutoFill & Passwords), so the fingerprint step is one Apple sheet.
 - **PC (seller):** `https://payalone.vercel.app/merchant` open, the iPad's pay code in "recent customers".
 - **Native iPad app:** use it only if "Verify App" has succeeded (see BUILD_LOG 17 Nov). Then the request is read out and the app listens with no tap, and Touch ID is Apple's plain prompt.
 - Screen-record the iPad (Control Center > Screen Recording, with microphone on) and the PC at the same time, or film both screens.
@@ -14,8 +14,7 @@ Everything shown is the hosted app on the **real Interledger test wallet** (test
 
 **0:25-0:45: Set up once (show, do not redo).** On the iPad: the pay code (six digits, spoken aloud, also a QR lock-screen picture). The spending limit was set once on the wallet's own consent page (show the limit meter). "From now on she never leaves the app, and the wallet itself refuses anything over the limit."
 
-**0:45-1:50: A payment, by talking.** Lock the iPad first. On the PC, the seller types Gloria's pay code and USD 2, and sends.
-- iPad, locked: the alert sounds and is read aloud ("Mama Chris asks you for 2 dollars..."). Gloria rests her finger on the Home button to unlock and opens the alert; Pay Alone opens on the request. "Locked means safe: nobody can pay from the lock screen."
+**0:45-1:50: A payment, by talking.** Pay Alone open on the iPad. On the PC, the seller types Gloria's pay code and USD 2, and sends.
 - iPad: the whole screen becomes one button. One tap (none in the native app). The orb turns blue: Pay Alone's live voice (Nigerian voice, she can interrupt) says who is asking and the exact amount that will leave her account, taken from the wallet's quote. The orb turns green when it listens.
 - Gloria, in her own words: "Who is this?" "Mama Chris; you have paid her before." "How much will I have left?" What is left of her limit after this payment.
 - Gloria: "Pay." The agent tells her to rest her finger on the Home button; the fingerprint prompt opens. "The voice never moves money: the fingerprint signs this one request, bound to this quote and amount."
@@ -27,7 +26,7 @@ Everything shown is the hosted app on the **real Interledger test wallet** (test
 
 **2:20-2:45: Open Payments under the hood.** One slide or the README diagram: incoming payment (seller) > quote (customer) > one interactive grant with `limits.debitAmount` and a weekly `interval` > outgoing payments under that grant, token rotation, callback hash check. Two separate apps, two wallets, two keys.
 
-**2:45-3:00: Honest close.** "Working: everything you saw, on the test wallet. Simulated: nothing in this video. Not yet: Igbo in the live voice (ElevenLabs does not support it; Igbo users get English), alerts when the device is switched off (nothing can reach it), screen-reader testing with blind users, and native-speaker checks of the Yoruba, Igbo, Hausa and Pidgin wording. Next: test with blind users at a Lagos market."
+**2:45-3:00: Honest close.** "Working: everything you saw, on the test wallet. Simulated: nothing in this video. Not yet: Igbo in the live voice (ElevenLabs does not support it; Igbo users get English), lock-screen alerts (built and accepted by Apple's push service, but not delivered on our test iPad), screen-reader testing with blind users, and native-speaker checks of the Yoruba, Igbo, Hausa and Pidgin wording. Next: test with blind users at a Lagos market."
 
 ## If something fails live
 - Live voice does not connect (orb stays amber): the app falls back to the simpler voice (reads the request, listens for "pay" or "no"). Say so. Background audio (music, a podcast) confuses it: pause it before recording.
