@@ -2,7 +2,7 @@ import { capSummary, customerHistory, getRequestFor, isOpen } from "@/lib/domain
 import { fail, requireCustomer } from "@/lib/http";
 import { exceedsCap, remainingOfCap, speakAmount } from "@/lib/money";
 import { askingSentence, isLang, type Lang } from "@/lib/voice/sentences";
-import { AGENT_LANG, agentToken } from "@/lib/voice/agentToken";
+import { AGENT_LANG, agentSignedUrl, agentToken } from "@/lib/voice/agentToken";
 
 /**
  * Starts the live voice conversation with the one Pay Alone agent (ElevenLabs Agents, WebRTC).
@@ -45,8 +45,8 @@ export async function GET(req: Request) {
     const r = id ? await getRequestFor(customer, id) : null;
     if (r && (!isOpen(r) || !r.quote)) return Response.json({ error: { kind: "not_ready", message: "This request is not waiting for an answer." } }, { status: 409 });
 
-    const token = await agentToken(AGENT_ID);
-    if (!token) return Response.json({ error: { kind: "unavailable", message: "Live voice is not available right now." } }, { status: 502 });
+    const [token, signedUrl] = await Promise.all([agentToken(AGENT_ID), agentSignedUrl(AGENT_ID)]);
+    if (!token && !signedUrl) return Response.json({ error: { kind: "unavailable", message: "Live voice is not available right now." } }, { status: 502 });
 
     // The customer's own records.
     const cap = capSummary(customer.cap);
@@ -93,6 +93,7 @@ export async function GET(req: Request) {
     return Response.json(
       {
         token,
+        signedUrl,
         language: AGENT_LANG[lang],
         dynamicVariables: {
           first_message: first,
