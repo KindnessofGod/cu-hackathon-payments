@@ -367,17 +367,27 @@ export default function WalletPage() {
       liveActive.current = true;
       liveFor.current = requestId ?? "";
       setLiveLines([]);
+      const startedAt = Date.now();
+      let heardLines = 0;
       try {
         liveSession.current = await startLive({
           startUrl: `/api/voice/agent?native=${inNativeApp() ? "1" : "0"}${requestId ? `&id=${encodeURIComponent(requestId)}` : ""}`,
           lang: prefs.lang,
           onMode: setLiveMode,
-          onLine: (who, text) => setLiveLines((l) => [...l, { who, text }]),
+          onLine: (who, text) => {
+            heardLines++;
+            setLiveLines((l) => [...l, { who, text }]);
+          },
           onEnd: () => {
             liveActive.current = false;
             liveSession.current = null;
             setLiveMode("");
             liveHandlers.current.ended?.();
+            // Ended at once without a word: the voice service refused (for example, out of minutes). Say so aloud.
+            if (Date.now() - startedAt < 6000 && heardLines === 0) {
+              report("live voice ended at once", "no lines");
+              void voice.speak("Sorry, the Pay Alone voice is not available right now. You can still pay by tapping the screen.");
+            }
           },
           tools: {
             approve_payment: () => liveHandlers.current.approve?.() ?? Promise.resolve(nothingWaiting()),
