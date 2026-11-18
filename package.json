@@ -12,6 +12,7 @@
     "dev:mock": "MOCK_OP=1 next dev"
   },
   "dependencies": {
+    "@elevenlabs/react": "1.23.0",
     "@interledger/open-payments": "^7.4.0",
     "@simplewebauthn/browser": "^14.0.0",
     "@simplewebauthn/server": "^14.1.0",

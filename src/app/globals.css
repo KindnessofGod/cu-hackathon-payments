@@ -185,3 +185,47 @@ video.scan { width: 100%; border-radius: 16px; border: 2px solid var(--line); ba
   @keyframes pulse { 50% { transform: scale(1.18); } }
 }
 .takeover .refuse { flex: 0 0 auto; margin: 0; border-radius: 0; border: 0; border-top: 1px solid rgba(255, 255, 255, 0.25); background: #050a08; color: #fff; min-height: 5.2rem; font-size: 1.25rem; }
+
+/* Live voice orb: swells with whoever is talking. --level is 0..1, set every frame. */
+.takeover .orb {
+  --level: 0;
+  --hue: 215 90% 60%;
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 9rem;
+  height: 9rem;
+  margin: 0 auto 0.5rem;
+}
+.takeover .orb.listening { --hue: 145 70% 48%; }
+.takeover .orb.connecting { --hue: 40 90% 55%; }
+.takeover .orb .orb-core {
+  width: 5.5rem;
+  height: 5.5rem;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, hsl(var(--hue) / 1), hsl(var(--hue) / 0.55) 60%, hsl(var(--hue) / 0.25));
+  box-shadow: 0 0 calc(1rem + var(--level) * 3rem) hsl(var(--hue) / 0.7);
+  transform: scale(calc(1 + var(--level) * 0.45));
+  transition: transform 60ms linear;
+}
+.takeover .orb .orb-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 3px solid hsl(var(--hue) / 0.55);
+  animation: orb-breathe 2.4s ease-in-out infinite;
+  transform: scale(calc(0.75 + var(--level) * 0.4));
+}
+.takeover .orb .orb-ring.two { animation-delay: 1.2s; }
+.takeover .orb.connecting .orb-core { animation: orb-pulse 1s ease-in-out infinite; }
+@keyframes orb-breathe {
+  0%, 100% { opacity: 0.25; }
+  50% { opacity: 0.8; }
+}
+@keyframes orb-pulse {
+  0%, 100% { transform: scale(0.9); }
+  50% { transform: scale(1.05); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .takeover .orb .orb-ring, .takeover .orb.connecting .orb-core { animation: none; }
+}

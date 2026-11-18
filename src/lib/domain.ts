@@ -400,7 +400,7 @@ export async function stopEverything(customer: Customer): Promise<void> {
 
 // ---------- wallet app: requests ----------
 
-function isOpen(r: PaymentRequest): boolean {
+export function isOpen(r: PaymentRequest): boolean {
   return r.status === "waiting" || r.status === "quoted";
 }
 
