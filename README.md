@@ -4,7 +4,7 @@ CU Next Gen Hackathon 2026, Track 2: Inclusive Payments and Financial Access. Bu
 
 > **Status, 17 Nov 2026, night:** on the Interledger test wallet, through the hosted app: a one-time payment with consent on the wallet's page, a weekly spending limit set once, payments approved inside the app under that limit (including with Touch ID on an iPad), and the wallet refusing a payment over it. The customer can talk about a request by voice in five languages. "Stop everything" has so far run only against the SIMULATED wallet. The native iPad app is built and installs, but iPadOS has not yet let it open (see Limitations).
 
-Hosted: https://pay-alone.vercel.app (seller: `/merchant`, customer: `/wallet`).
+Hosted: https://payalone.vercel.app (seller: `/merchant`, customer: `/wallet`).
 
 ## The problem
 Blind, elderly and non-reading Nigerians often cannot use their own money alone. Banks refuse cards, and apps and ATMs do not talk, so they hand a card and PIN to a helper. Helpers sometimes steal. See `docs/PITCH_EVIDENCE.md`.
@@ -72,7 +72,7 @@ Code: `src/lib/op/real.ts` (the SDK calls), `src/lib/domain.ts` (the journey), `
 | Hosted URL and deployed storage | yes (Vercel and Supabase) |  |  |
 
 ## Try it (judges)
-**Hosted, real test wallet:** open https://pay-alone.vercel.app/merchant (seller) on one device and https://pay-alone.vercel.app/wallet (customer) on another, for example a laptop and a phone or tablet.
+**Hosted, real test wallet:** open https://payalone.vercel.app/merchant (seller) on one device and https://payalone.vercel.app/wallet (customer) on another, for example a laptop and a phone or tablet.
 1. Customer: set up the device (the customer wallet address is filled in). Note the six-digit pay code.
 2. Seller: type the pay code and an amount such as 0.01, and send.
 3. Customer: the request fills the screen. Tap once: it is read aloud, then the app listens. Ask "who is this?" or "how much is left?", then say "pay" (or tap twice) or "no". Allow the microphone when asked.

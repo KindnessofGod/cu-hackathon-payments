@@ -3,8 +3,8 @@
 Everything shown is the hosted app on the **real Interledger test wallet** (test money). Nothing in this script is simulated; if a step fails on the day, say so and show the recorded run instead of faking it.
 
 ## Before recording
-- **iPad (customer):** charged and on a network that resolves the test wallet (if pages fail with "server can't be found", switch DNS, for example the 1.1.1.1 app). `https://pay-alone.vercel.app/wallet` open (Home Screen icon if added). Fingerprint set up, weekly limit set, volume up, silent switch off. Voice language chosen in "Voice and settings". Passwords provider set to Apple Passwords (Settings > Apps > Safari > AutoFill & Passwords), so the fingerprint step is one Apple sheet.
-- **PC (seller):** `https://pay-alone.vercel.app/merchant` open, the iPad's pay code in "recent customers".
+- **iPad (customer):** charged and on a network that resolves the test wallet (if pages fail with "server can't be found", switch DNS, for example the 1.1.1.1 app). `https://payalone.vercel.app/wallet` open (Home Screen icon if added). Fingerprint set up, weekly limit set, volume up, silent switch off. Voice language chosen in "Voice and settings". Passwords provider set to Apple Passwords (Settings > Apps > Safari > AutoFill & Passwords), so the fingerprint step is one Apple sheet.
+- **PC (seller):** `https://payalone.vercel.app/merchant` open, the iPad's pay code in "recent customers".
 - **Native iPad app:** use it only if "Verify App" has succeeded (see BUILD_LOG 17 Nov). Then the request is read out and the app listens with no tap, and Touch ID is Apple's plain prompt.
 - Screen-record the iPad (Control Center > Screen Recording, with microphone on) and the PC at the same time, or film both screens.
 
