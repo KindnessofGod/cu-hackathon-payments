@@ -230,6 +230,17 @@ export default function WalletPage() {
     void refresh();
   }, [refresh]);
 
+  // Lock-screen alerts: the service worker shows them; when one is opened, check for the request at once.
+  useEffect(() => {
+    if (!("serviceWorker" in navigator)) return;
+    navigator.serviceWorker.register("/sw.js").catch(() => undefined);
+    const onMsg = (e: MessageEvent) => {
+      if (e.data?.type === "check-requests") void refresh();
+    };
+    navigator.serviceWorker.addEventListener("message", onMsg);
+    return () => navigator.serviceWorker.removeEventListener("message", onMsg);
+  }, [refresh]);
+
   // Poll for new requests. The Open Payments API has no push to clients, so the app asks.
   useEffect(() => {
     const t = setInterval(() => void refresh(), 2500);
@@ -443,7 +454,8 @@ function Setup({ suggested, simulated, onDone }: { suggested: string; simulated:
       <AppBar role="Customer" />
       <main>
         <h1>Set up this device</h1>
-        <p className="lead">This is done once. Enter the wallet address you pay from.</p>
+        <LinkForm onDone={onDone} />
+        <p className="lead">New to Pay Alone? This is done once. Enter the wallet address you pay from.</p>
         <form onSubmit={submit} className="card" style={{ maxWidth: "40rem" }}>
           <label htmlFor="wa">Your wallet address</label>
           <input
@@ -473,6 +485,191 @@ function Setup({ suggested, simulated, onDone }: { suggested: string; simulated:
         </form>
       </main>
     </>
+  );
+}
+
+function isHomeScreenApp(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    (window.matchMedia?.("(display-mode: standalone)").matches || (navigator as Navigator & { standalone?: boolean }).standalone === true)
+  );
+}
+
+/** The Home Screen app has its own sign-in, separate from Safari. A one-time code links it to the same customer. */
+function LinkForm({ onDone }: { onDone: () => void }) {
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await api("/api/wallet/link", { method: "PUT", body: { code } });
+      onDone();
+    } catch (err) {
+      setError(errorText(err).message);
+      setBusy(false);
+    }
+  }
+  return (
+    <form onSubmit={submit} className="card" style={{ maxWidth: "40rem" }}>
+      <h2>Already use Pay Alone in Safari?</h2>
+      <p className="muted">
+        In Safari, open Pay Alone, then &quot;Lock-screen alerts&quot;, then &quot;Get a link code&quot;. Enter the six digits here. You keep your limit, fingerprint
+        and history.
+      </p>
+      <label htmlFor="link">Link code</label>
+      <input id="link" inputMode="numeric" autoComplete="one-time-code" maxLength={8} value={code} onChange={(e) => setCode(e.target.value)} />
+      {error && (
+        <p className="status bad" role="alert">
+          {error}
+        </p>
+      )}
+      <button className="wide" disabled={busy || code.replace(/\D/g, "").length !== 6}>
+        {busy ? "Linking…" : "Link this app"}
+      </button>
+    </form>
+  );
+}
+
+function b64urlToBytes(s: string): Uint8Array<ArrayBuffer> {
+  const b = atob(s.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (s.length % 4)) % 4));
+  const out = new Uint8Array(new ArrayBuffer(b.length));
+  for (let i = 0; i < b.length; i++) out[i] = b.charCodeAt(i);
+  return out;
+}
+
+/** Lock-screen alerts (Web Push). On iPad and iPhone this works only in the Home Screen app. */
+function Alerts({ say }: { say: (t: string) => void }) {
+  const [status, setStatus] = useState<"checking" | "unsupported" | "needs-home-screen" | "off" | "denied" | "on">("checking");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [link, setLink] = useState<string | null>(null);
+
+  useEffect(() => {
+    void (async () => {
+      const supported = "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+      if (!supported) {
+        const apple = /iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent) && "ontouchend" in document;
+        setStatus(apple && !isHomeScreenApp() ? "needs-home-screen" : "unsupported");
+        return;
+      }
+      if (Notification.permission === "denied") return setStatus("denied");
+      const reg = await navigator.serviceWorker.getRegistration("/");
+      const sub = await reg?.pushManager.getSubscription();
+      setStatus(sub && Notification.permission === "granted" ? "on" : "off");
+    })().catch(() => setStatus("unsupported"));
+  }, []);
+
+  async function turnOn() {
+    setBusy(true);
+    setMessage(null);
+    try {
+      // Ask first, straight from the tap: iPadOS only allows the question from a tap.
+      const permission = await Notification.requestPermission();
+      if (permission !== "granted") {
+        setStatus(permission === "denied" ? "denied" : "off");
+        setMessage("Alerts were not allowed.");
+        return;
+      }
+      const { publicKey } = await api<{ publicKey: string | null }>("/api/wallet/push");
+      if (!publicKey) throw new Error("Alerts are not set up on the server yet.");
+      const reg = await navigator.serviceWorker.register("/sw.js");
+      await navigator.serviceWorker.ready;
+      const sub =
+        (await reg.pushManager.getSubscription()) ??
+        (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64urlToBytes(publicKey) }));
+      await api("/api/wallet/push", { method: "POST", body: { subscription: sub.toJSON() } });
+      setStatus("on");
+      const t = "Lock-screen alerts are on. When a seller asks you for money, this iPad will alert you, even when it is locked.";
+      setMessage(t);
+      say(t);
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : errorText(e).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function test() {
+    setBusy(true);
+    const t = "Test alert in 10 seconds. Lock the iPad now if you want to hear it on the lock screen.";
+    setMessage(t);
+    say(t);
+    try {
+      const r = await api<{ sent: number; failed: number }>("/api/wallet/push", { method: "PUT", body: { delaySeconds: 10 } });
+      setMessage(r.sent ? "Test alert sent." : "The test alert could not be sent. Turn alerts off and on again.");
+    } catch (e) {
+      setMessage(errorText(e).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function getLink() {
+    setBusy(true);
+    try {
+      const r = await api<{ code: string }>("/api/wallet/link", { method: "POST" });
+      setLink(r.code);
+      const d = r.code.split("").join(" ");
+      say(`Your link code is ${d}. Again: ${d}. It works for ten minutes, once.`);
+    } catch (e) {
+      setMessage(errorText(e).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (status === "checking") return null;
+  return (
+    <section className="card" aria-labelledby="alerts-h">
+      <h2 id="alerts-h">
+        <span className="card-icon">
+          <Icon name="bell" size={22} />
+        </span>
+        Lock-screen alerts
+      </h2>
+      {status === "on" && <p>On. A seller&apos;s request alerts this device even when it is locked. VoiceOver reads the alert; unlock with your fingerprint to answer.</p>}
+      {status === "off" && <p>Hear a seller&apos;s request even when this device is locked. You still unlock with your fingerprint to pay.</p>}
+      {status === "denied" && <p>Alerts are blocked for Pay Alone. Allow them in Settings, then Notifications, then Pay Alone.</p>}
+      {status === "unsupported" && <p className="muted">This browser cannot show lock-screen alerts.</p>}
+      {status === "needs-home-screen" && (
+        <>
+          <p>On iPad, alerts work only when Pay Alone is on the Home Screen.</p>
+          <ol>
+            <li>Tap Share, at the top of Safari, then &quot;Add to Home Screen&quot;, then Add.</li>
+            <li>Tap &quot;Get a link code&quot; below. Open Pay Alone from the new Home Screen icon and enter the code.</li>
+            <li>In the Home Screen app, tap &quot;Turn on alerts&quot;.</li>
+          </ol>
+        </>
+      )}
+      {(status === "off" || status === "denied") && (
+        <button className="wide" disabled={busy || status === "denied"} onClick={() => void turnOn()}>
+          <Icon name="bell" size={22} /> {busy ? "Turning on…" : "Turn on alerts"}
+        </button>
+      )}
+      {status === "on" && (
+        <button className="wide secondary" disabled={busy} onClick={() => void test()}>
+          <Icon name="bell" size={22} /> Send me a test alert
+        </button>
+      )}
+      {!isHomeScreenApp() && (
+        <button className="wide secondary" disabled={busy} onClick={() => void getLink()}>
+          Get a link code
+        </button>
+      )}
+      {link && (
+        <p className="code" aria-label={`Link code ${link.split("").join(" ")}`}>
+          {link}
+        </p>
+      )}
+      {message && (
+        <p role="status" aria-live="polite">
+          {message}
+        </p>
+      )}
+    </section>
   );
 }
 
@@ -1006,6 +1203,8 @@ function Home(props: {
 
         <TalkCard live={live} say={say} />
         {live.mode && <LiveOverlay live={live} />}
+
+        <Alerts say={say} />
 
         <section className="card" aria-labelledby="code-h">
           <div className="paycode">

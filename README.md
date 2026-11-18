@@ -65,7 +65,7 @@ Code: `src/lib/op/real.ts` (the SDK calls), `src/lib/domain.ts` (the journey), `
 | Payment history on both apps, spoken summary for the customer | yes (payments through this app only) |  |  |
 | Seller scans the pay code with a camera | written, **not yet tested on a device** |  |  |
 | Screen-reader testing (VoiceOver on iPad) |  |  | not done yet |
-| Notification on the locked device |  |  | yes |
+| **Alert on the locked device** (a seller's request wakes the locked iPad; VoiceOver, or Siri on AirPods, reads "Mama Chris asks you for 2 dollars"; the customer unlocks with their fingerprint and the app opens on the request) | yes, built 18 Nov: Web Push (VAPID, `web-push` library) from the Home Screen app, iPadOS 16.4 or later. The Home Screen app has its own sign-in, so a one-time six-digit link code moves the device to it (10 minutes, one use, wrong tries limited). The alert never contains a way to pay. A device that is switched off gets nothing until it is on again; the request stays open 10 minutes. Not yet tested on the iPad at the time of writing |  |  |
 | Saved people announced in the customer's own recorded voice |  |  | yes |
 | Customer starts a payment themselves; spoken commands |  |  | yes |
 | USSD / feature-phone access |  |  | yes (not started) |
