@@ -2,6 +2,8 @@
 
 CU Next Gen Hackathon 2026, Track 2: Inclusive Payments and Financial Access. Built on Interledger Open Payments.
 
+> **AI assistance disclosure:** this project was built with AI assistance. Claude (Anthropic) helped with the research (problem evidence, Open Payments and ATM accessibility research) and wrote much of the code (Claude Code), under the team's direction; the team reviewed, ran and tested it. Details, prior work and all third-party services and libraries: [`DISCLOSURES.md`](DISCLOSURES.md).
+
 > **Status, 17 Nov 2026, night:** on the Interledger test wallet, through the hosted app: a one-time payment with consent on the wallet's page, a weekly spending limit set once, payments approved inside the app under that limit (including with Touch ID on an iPad), and the wallet refusing a payment over it. The customer can talk about a request by voice in five languages. "Stop everything" has so far run only against the SIMULATED wallet. The native iPad app is built and installs, but iPadOS has not yet let it open (see Limitations).
 
 Hosted: https://payalone.vercel.app (seller: `/merchant`, customer: `/wallet`).
