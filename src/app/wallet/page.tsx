@@ -9,7 +9,7 @@ import { startAuthentication, startRegistration } from "@simplewebauthn/browser"
 import { inNativeApp, nativeCreateKey, nativeSign } from "@/lib/native";
 import { canListen, recordAnswer } from "@/lib/listen";
 import type { Intent } from "@/lib/voice/intent";
-import { startLive, type LiveMode, type LiveSession } from "@/lib/liveVoice";
+import { report, startLive, type LiveMode, type LiveSession } from "@/lib/liveVoice";
 
 const HELP_TEXT = "You can ask: who is this, how much is left, or say again. To pay, say pay. To refuse, say no.";
 
@@ -565,28 +565,50 @@ function Alerts({ say }: { say: (t: string) => void }) {
   async function turnOn() {
     setBusy(true);
     setMessage(null);
+    let step = "asking permission";
+    const limit = <T,>(p: Promise<T>, secs: number): Promise<T> =>
+      Promise.race([p, new Promise<T>((_, no) => setTimeout(() => no(new Error(`no answer after ${secs} seconds`)), secs * 1000))]);
+    const at = (s: string) => {
+      step = s;
+      setMessage(`Turning on: ${s}…`);
+    };
     try {
       // Ask first, straight from the tap: iPadOS only allows the question from a tap.
-      const permission = await Notification.requestPermission();
+      at("asking permission");
+      const permission = await limit(Notification.requestPermission(), 60);
       if (permission !== "granted") {
         setStatus(permission === "denied" ? "denied" : "off");
         setMessage("Alerts were not allowed.");
         return;
       }
-      const { publicKey } = await api<{ publicKey: string | null }>("/api/wallet/push");
+      at("getting the server key");
+      const { publicKey } = await limit(api<{ publicKey: string | null }>("/api/wallet/push"), 15);
       if (!publicKey) throw new Error("Alerts are not set up on the server yet.");
-      const reg = await navigator.serviceWorker.register("/sw.js");
-      await navigator.serviceWorker.ready;
-      const sub =
-        (await reg.pushManager.getSubscription()) ??
-        (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64urlToBytes(publicKey) }));
-      await api("/api/wallet/push", { method: "POST", body: { subscription: sub.toJSON() } });
+      at("starting the alert service");
+      const reg = await limit(navigator.serviceWorker.register("/sw.js", { scope: "/" }), 15);
+      if (!reg.active) {
+        const w = reg.installing ?? reg.waiting;
+        await limit(
+          new Promise<void>((done) => {
+            if (!w) return done();
+            w.addEventListener("statechange", () => w.state === "activated" && done());
+          }),
+          15,
+        );
+      }
+      at("getting an alert address from Apple");
+      const old = await reg.pushManager.getSubscription();
+      const sub = old ?? (await limit(reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64urlToBytes(publicKey) }), 30));
+      at("saving");
+      await limit(api("/api/wallet/push", { method: "POST", body: { subscription: sub.toJSON() } }), 15);
       setStatus("on");
       const t = "Lock-screen alerts are on. When a seller asks you for money, this iPad will alert you, even when it is locked.";
       setMessage(t);
       say(t);
     } catch (e) {
-      setMessage(e instanceof Error ? e.message : errorText(e).message);
+      const why = e instanceof Error ? e.message : errorText(e).message;
+      report(`alerts failed at ${step}:`, e instanceof Error ? e : why);
+      setMessage(`Alerts could not be turned on (${step}): ${why}`);
     } finally {
       setBusy(false);
     }
