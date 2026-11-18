@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AppBar, Avatar, Icon } from "@/components/ui";
+import { AppBar, Icon } from "@/components/ui";
 import { api, errorText, type ApiError } from "@/lib/client";
 import { formatAmount, speakAmount, type Amount } from "@/lib/money";
 import { BrowserSpeechOutput, HostedSpeechOutput } from "@/lib/speech";
@@ -10,6 +10,10 @@ import { inNativeApp, nativeCreateKey, nativeSign } from "@/lib/native";
 import { canListen, recordAnswer } from "@/lib/listen";
 import type { Intent } from "@/lib/voice/intent";
 import { nudgeAudio, report, startLive, type LiveMode, type LiveSession } from "@/lib/liveVoice";
+import { GlassOrb } from "@/components/GlassOrb";
+import { createAvatar } from "@dicebear/core";
+import * as openPeeps from "@dicebear/open-peeps";
+import "./dashboard.css";
 
 const HELP_TEXT = "You can ask: who is this, how much is left, or say again. To pay, say pay. To refuse, say no.";
 
@@ -23,6 +27,95 @@ function replyText(kind: "who" | "left", r: RequestView, cap: CapView | null): s
   return after < BigInt(0)
     ? `${left} This payment is more than what is left, so your wallet will refuse it.`
     : `${left} If you pay, ${formatAmount({ ...cap.left, value: after.toString() })} will be left.`;
+}
+
+const SYMBOL: Record<string, string> = { USD: "$", NGN: "₦", EUR: "€", GBP: "£", ZAR: "R", KES: "KSh" };
+const symbolOf = (code: string) => SYMBOL[code] ?? code;
+const titleCase = (n: string) => n.replace(/\b\p{L}/gu, (c) => c.toUpperCase());
+
+/** An amount with a small raised currency sign. Screen readers hear it spoken in full. */
+function Money({ a, size = "md" }: { a: Amount; size?: "sm" | "md" | "lg" | "xl" }) {
+  const num = formatAmount(a).slice(a.assetCode.length + 1);
+  return (
+    <span className={`money ${size}`}>
+      <span className="sr-only">{speakAmount(a)}</span>
+      <span aria-hidden="true">
+        <sup>{symbolOf(a.assetCode)}</sup>
+        {num}
+      </span>
+    </span>
+  );
+}
+
+/** Hand-drawn person (Open Peeps). The look is picked from the name, so it stays the same each time. */
+const LOOKS = [
+  { head: "bantuKnots", face: "smileBig", skin: "ae5d29", bg: "c3e88f" },
+  { head: "short2", face: "calm", skin: "694d3d", bg: "bfe6f5", beard: true },
+  { head: "twists", face: "lovingGrin1", skin: "d08b5b", bg: "f3dfe9" },
+  { head: "afro", face: "smile", skin: "694d3d", bg: "e4e1fb" },
+  { head: "hijab", face: "cute", skin: "ae5d29", bg: "fde7c8" },
+  { head: "dreads1", face: "smileTeethGap", skin: "d08b5b", bg: "d7f0e6" },
+];
+const SELF_LOOK = { head: "grayBun", face: "smile", skin: "694d3d", bg: "ffffff" };
+function lookFor(name: string) {
+  let h = 0;
+  for (const c of name.toLowerCase()) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return LOOKS[h % LOOKS.length]!;
+}
+function Peep({ name, size = 44, bg, self = false }: { name: string; size?: number; bg?: string; self?: boolean }) {
+  const src = useMemo(() => {
+    const l = self ? SELF_LOOK : lookFor(name);
+    return createAvatar(openPeeps, {
+      seed: name,
+      backgroundColor: [bg ?? l.bg],
+      radius: 50,
+      scale: 110,
+      head: [l.head],
+      face: [l.face],
+      skinColor: [l.skin],
+      accessoriesProbability: 0,
+      maskProbability: 0,
+      facialHairProbability: "beard" in l && l.beard ? 100 : 0,
+    } as Parameters<typeof createAvatar>[1]).toDataUri();
+  }, [name, bg, self]);
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img src={src} alt="" width={size} height={size} className="peep" />;
+}
+
+/** This week's payments by day (Monday first), from our own records. Heights only; money stays in minor units. */
+function weekSummary(items: HistoryItem[]) {
+  const now = new Date();
+  const monday = new Date(now);
+  monday.setHours(0, 0, 0, 0);
+  monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+  const labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  const values = labels.map(() => BigInt(0));
+  let paid = 0;
+  let refused = 0;
+  for (const h of items) {
+    const at = new Date(h.at);
+    if (at < monday) continue;
+    if (h.status === "paid") {
+      paid++;
+      values[(at.getDay() + 6) % 7] += BigInt((h.debitAmount ?? h.requested).value);
+    } else if (h.status === "declined" || h.status === "expired" || h.status === "failed") refused++;
+  }
+  const total = values.reduce((a, b) => a + b, BigInt(0));
+  const max = Math.max(1, ...values.map(Number));
+  const todayIdx = (now.getDay() + 6) % 7;
+  return { days: labels.map((label, i) => ({ label, value: Number(values[i]), today: i === todayIdx })), max, paid, refused, total: total.toString() };
+}
+
+/** People in this customer's history: paid ones first, by how often. */
+function peopleOf(items: HistoryItem[]) {
+  const m = new Map<string, { name: string; paid: number; last: string }>();
+  for (const h of items) {
+    const p = m.get(h.merchantName) ?? { name: h.merchantName, paid: 0, last: h.at };
+    if (h.status === "paid") p.paid++;
+    if (h.at > p.last) p.last = h.at;
+    m.set(h.merchantName, p);
+  }
+  return [...m.values()].sort((a, b) => b.paid - a.paid || b.last.localeCompare(a.last));
 }
 
 interface CapView {
@@ -1146,38 +1239,80 @@ function Approve({
 
   const icon = hearing === "listening" ? "mic" : armed && needsFinger ? "finger" : armed ? "check" : "speaker";
 
+  const fee =
+    request.debitAmount && request.receiveAmount && request.debitAmount.assetCode === request.receiveAmount.assetCode
+      ? { ...request.debitAmount, value: (BigInt(request.debitAmount.value) - BigInt(request.receiveAmount.value)).toString() }
+      : null;
+  const leftAfter =
+    cap && cap.status === "active" && request.debitAmount && cap.left.assetCode === request.debitAmount.assetCode
+      ? { ...cap.left, value: (BigInt(cap.left.value) - BigInt(request.debitAmount.value)).toString() }
+      : null;
   return (
     <div className="takeover" role="dialog" aria-modal="true" aria-label="Payment request">
       <button
         ref={buttonRef}
-        className={`approve ${armed || hearing === "listening" ? "armed" : ""}`}
+        className={`approve pay-sheet ${armed || hearing === "listening" ? "armed" : ""}`}
         onClick={() => void activate()}
         disabled={busy}
         aria-describedby="approve-how"
       >
-        {live.mode ? <VoiceOrb session={live.session} mode={live.mode} /> : <Avatar name={request.merchantName} />}
-        {!request.knownPayee && <span className="new-tag">New person</span>}
-        <span className="who">{request.outgoing ? `Sending to ${request.merchantName}` : `${request.merchantName} is asking for`}</span>
-        <span className="amount">{formatAmount(request.receiveAmount ?? request.requested)}</span>
-        {request.debitAmount && <span className="debit">{formatAmount(request.debitAmount)} will leave your account</span>}
-        <span className="how" id="approve-how">
-          <Icon name={icon} size={26} />
-          {instruction}
+        <span className="pay-head">
+          <Peep name={request.merchantName} size={84} />
+          <span className="pay-who">{titleCase(request.merchantName)}</span>
+          <span className="pay-what">{request.outgoing ? "You are sending money" : "is asking you to pay"}</span>
+          {!request.knownPayee && <span className="new-tag">New person</span>}
+        </span>
+        <span className="pay-stack">
+          <span className="pay-card lime">
+            <span className="pc-label">You pay</span>
+            {request.debitAmount ? <Money a={request.debitAmount} size="lg" /> : <span className="money lg">Checking…</span>}
+            <span className="pc-foot">{leftAfter
+                ? BigInt(leftAfter.value) < BigInt(0)
+                  ? "More than what is left of your limit"
+                  : `Left of your limit after this: ${formatAmount(leftAfter)}`
+                : "Fees included"}</span>
+          </span>
+          <span className="pay-link">to {titleCase(request.merchantName)}</span>
+          <span className="pay-card dark">
+            <span className="pc-label">{request.outgoing ? "They get" : `${titleCase(request.merchantName)} gets`}</span>
+            <Money a={request.receiveAmount ?? request.requested} size="lg" />
+            <span className="pc-foot">{fee && fee.value !== "0" ? `Fee ${formatAmount(fee)}` : "No fee"}</span>
+          </span>
+        </span>
+        <span className="pay-bar" id="approve-how">
+          <span className="pay-knob">
+            <Icon name={icon} size={26} />
+          </span>
+          <span className="pay-bar-text">{instruction}</span>
         </span>
       </button>
       <div className="sr-only" role="status" aria-live="assertive">
         {message}
       </div>
-      {(live.mode ? live.lines : talk).length > 0 && (
-        <ol className="talk" aria-label="Conversation">
-          {(live.mode ? live.lines : talk).slice(-6).map((t, i) => (
+      <aside className={`voice-panel pay-voice ${live.mode || hearing || talk.length ? "on" : ""}`} aria-label="Talking about this request">
+        <header className="vp-top">
+          <span>
+            <b>Pay Alone</b>
+            <span className={`vp-status ${live.mode}`}>
+              {live.mode === "speaking" ? "Speaking" : live.mode === "listening" || hearing === "listening" ? "Listening" : live.mode === "connecting" ? "Connecting" : "Ready"}
+            </span>
+          </span>
+        </header>
+        <div className="vp-stage">
+          <span className="vp-arc a1" />
+          <span className="vp-arc a2" />
+          <VoiceOrb session={live.session} mode={live.mode || (hearing === "listening" ? "listening" : hearing === "speaking" ? "speaking" : "")} small />
+        </div>
+        <ol className="vp-talk" aria-label="Conversation">
+          {!live.mode && talk.length === 0 && <li className="app">Tap anywhere on the left and talk to me about this request. Your fingerprint pays; your voice never does.</li>}
+          {(live.mode ? live.lines : talk).slice(-4).map((t, i) => (
             <li key={i} className={t.who}>
               <span className="sr-only">{t.who === "you" ? "You said: " : "Pay Alone said: "}</span>
               {t.text}
             </li>
           ))}
         </ol>
-      )}
+      </aside>
       <button className="refuse" onClick={() => void refuse()} disabled={busy}>
         Refuse this request
       </button>
@@ -1189,104 +1324,86 @@ function Approve({
  * A glowing orb that moves with the voices: it swells with the customer's voice (green) while the app
  * listens and with the agent's voice (blue) while it speaks. Decorative; the words are on screen too.
  */
-function VoiceOrb({ session, mode }: { session: React.RefObject<LiveSession | null>; mode: LiveMode }) {
-  const ref = useRef<HTMLSpanElement>(null);
-  useEffect(() => {
-    let frame = 0;
-    let smooth = 0;
-    const tick = () => {
-      const l = session.current?.levels() ?? { input: 0, output: 0 };
-      const level = mode === "speaking" ? l.output : mode === "listening" ? l.input : 0;
-      smooth = smooth * 0.75 + Math.min(1, level * 2.2) * 0.25;
-      ref.current?.style.setProperty("--level", smooth.toFixed(3));
-      frame = requestAnimationFrame(tick);
-    };
-    frame = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frame);
-  }, [session, mode]);
-  return (
-    <span className={`orb ${mode}`} ref={ref} aria-hidden="true">
-      <span className="orb-ring" />
-      <span className="orb-ring two" />
-      <span className="orb-core" />
-    </span>
-  );
+function VoiceOrb({ session, mode, small = false }: { session: React.RefObject<LiveSession | null>; mode: LiveMode | ""; small?: boolean }) {
+  const level = () => {
+    const l = session.current?.levels() ?? { input: 0, output: 0 };
+    return Math.min(1, (mode === "speaking" ? l.output : mode === "listening" ? l.input : 0) * 2.2);
+  };
+  return <GlassOrb mode={mode || "idle"} level={mode ? level : undefined} size={small ? "9rem" : "min(16rem, 62vw)"} />;
 }
 
 // ---------- talking to Pay Alone ----------
 
-/** Top of the home screen: greeting, what is left to spend, and the one big "talk" button. */
-function HeroCard({ customer, live, say }: { customer: CustomerView; live: Live; say: (t: string) => void }) {
-  const cap = customer.cap && customer.cap.status === "active" ? customer.cap : null;
-  const [note, setNote] = useState("");
-  const pct = cap ? Math.min(100, Number((BigInt(cap.spent.value) * BigInt(100)) / (BigInt(cap.limit.value) || BigInt(1)))) : 0;
-  async function start() {
-    setNote("");
-    if (!(await live.start())) {
-      const text = "The voice is not available right now. Please try again in a moment.";
-      setNote(text);
-      say(text);
-    }
-  }
+function liveLabel(mode: LiveMode | "") {
+  return mode === "connecting" ? "Connecting…" : mode === "speaking" ? "Speaking · interrupt any time" : mode === "listening" ? "Listening · talk naturally" : "Tap to talk";
+}
+
+/** The voice, in one lit panel: the glass orb, what was said, and the mic. Always on the side on iPad. */
+function VoiceStage({ live, onTalk, name, full = false }: { live: Live; onTalk: () => void; name?: string; full?: boolean }) {
+  const on = Boolean(live.mode);
+  const lines = on ? live.lines.slice(-3) : [];
   return (
-    <section className="hero-card" aria-labelledby="hero-h">
-      <p className="hero-hello">Good to see you</p>
-      <h1 id="hero-h">{customer.name ? customer.name.replace(/^./, (c) => c.toUpperCase()) : "Your wallet"}</h1>
-      {cap ? (
-        <div className="hero-figure">
-          <span className="hero-label">Left to spend this {cap.every}</span>
-          <span className="hero-amount">{formatAmount(cap.left)}</span>
-          <span className="hero-bar" aria-hidden="true">
-            <span style={{ width: `${100 - pct}%` }} />
-          </span>
-          <span className="hero-small">
-            {formatAmount(cap.spent)} spent of {formatAmount(cap.limit)}
-          </span>
-        </div>
-      ) : (
-        <div className="hero-figure">
-          <span className="hero-label">No spending limit set yet</span>
-        </div>
-      )}
-      <button className="hero-talk" onClick={() => void start()} disabled={Boolean(live.mode)}>
-        <span className="hero-talk-icon">
-          <Icon name="mic" size={26} />
+    <>
+      <header className="vp-top">
+        <span>
+          <b>Pay Alone</b>
+          <span className={`vp-status ${live.mode}`}>{live.mode === "speaking" ? "Speaking" : live.mode === "listening" ? "Listening" : live.mode === "connecting" ? "Connecting" : "Ready"}</span>
         </span>
-        Talk to Pay Alone
-      </button>
-      <p className="hero-hint">Ask what is left, who you paid, or say who to send money to. Your fingerprint confirms every payment.</p>
-      {note && <p role="status">{note}</p>}
-    </section>
+        {on && (
+          <button className="round dark" onClick={live.end} aria-label="End conversation">
+            <Icon name="cross" size={18} />
+          </button>
+        )}
+      </header>
+      <div className="vp-stage">
+        <span className="vp-arc a1" />
+        <span className="vp-arc a2" />
+        <VoiceOrb session={live.session} mode={live.mode} />
+      </div>
+      <ol className="vp-talk" aria-label="Conversation">
+        {lines.length === 0 && !on && (
+          <li className="app">
+            Hello{name ? ` ${name}` : ""}. Ask me what is left to spend, who you paid, or tell me who to send money to.
+          </li>
+        )}
+        {lines.map((t, i) => (
+          <li key={i} className={t.who}>
+            <span className="sr-only">{t.who === "you" ? "You said: " : "Pay Alone said: "}</span>
+            {t.text}
+          </li>
+        ))}
+      </ol>
+      <div className="vp-dock">
+        <span className="vp-tip" role="status">
+          {liveLabel(live.mode)}
+        </span>
+        <button className={`vp-mic ${live.mode}`} onClick={on ? live.end : onTalk} aria-label={on ? "End conversation" : "Talk to Pay Alone"}>
+          <span className="rp" />
+          <span className="rp r2" />
+          <span className="rp r3" />
+          <span className="vp-mic-core">
+            <Icon name={on ? "cross" : "mic"} size={30} />
+          </span>
+        </button>
+        {full && <span className="sr-only">Pay Alone conversation</span>}
+      </div>
+    </>
   );
 }
 
-/** The conversation screen when no payment is waiting: the orb, what was said, and an end button. */
-function LiveOverlay({ live }: { live: Live }) {
-  const label =
-    live.mode === "connecting" ? "Connecting…" : live.mode === "speaking" ? "Speaking… you can interrupt any time" : live.mode === "listening" ? "Listening… talk naturally" : "";
+function VoicePanel({ live, onTalk, name }: { live: Live; onTalk: () => void; name?: string }) {
   return (
-    <div className="takeover" role="dialog" aria-modal="true" aria-label="Talking to Pay Alone">
-      <div className="approve armed assistant-live">
-        {live.mode && <VoiceOrb session={live.session} mode={live.mode} />}
-        <span className="who">Pay Alone</span>
-        <span className="how" role="status">
-          <Icon name="mic" size={26} />
-          {label}
-        </span>
-      </div>
-      {live.lines.length > 0 && (
-        <ol className="talk" aria-label="Conversation">
-          {live.lines.slice(-6).map((t, i) => (
-            <li key={i} className={t.who}>
-              <span className="sr-only">{t.who === "you" ? "You said: " : "Pay Alone said: "}</span>
-              {t.text}
-            </li>
-          ))}
-        </ol>
-      )}
-      <button className="refuse" onClick={live.end}>
-        End conversation
-      </button>
+    <aside className="voice-panel" aria-label="Talk to Pay Alone">
+      <VoiceStage live={live} onTalk={onTalk} name={name} />
+    </aside>
+  );
+}
+
+/** On a phone, the conversation fills the screen in the same lit panel. */
+function LiveOverlay({ live }: { live: Live }) {
+  return (
+    <div className="voice-panel voice-full" role="dialog" aria-modal="true" aria-label="Talking to Pay Alone">
+      <VoiceStage live={live} onTalk={() => undefined} full />
     </div>
   );
 }
@@ -1309,12 +1426,72 @@ function Home(props: {
   const { customer, notice, say, live } = props;
   const cap = customer.cap;
   const digits = customer.payCode.split("").join(" ");
+  const name = customer.name ? titleCase(customer.name) : "";
+  const active = cap && cap.status === "active" ? cap : null;
+  const pct = active ? Number((BigInt(active.spent.value) * BigInt(100)) / (BigInt(active.limit.value) || BigInt(1))) : 0;
+  const leftPct = active ? Math.max(0, 100 - pct) : 0;
+  const week = weekSummary(props.history);
+  const people = peopleOf(props.history);
+  const [note, setNote] = useState("");
+  async function talk() {
+    setNote("");
+    if (!(await live.start())) {
+      const text = "The voice is not available right now. Please try again in a moment.";
+      setNote(text);
+      say(text);
+    }
+  }
+  const openSettings = () => {
+    const d = document.getElementById("settings") as HTMLDetailsElement | null;
+    if (d) d.open = true;
+  };
+  const today = new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" });
 
   return (
-    <>
-      <AppBar role="Customer" />
-      <main>
-        <HeroCard customer={customer} live={live} say={say} />
+    <div className="dash">
+      <aside className="rail" aria-label="Main">
+        <span className="rail-logo" aria-hidden="true">
+          <Icon name="shield" size={22} />
+        </span>
+        <a href="#top" className="rail-btn on" aria-label="Home">
+          <Icon name="home" />
+        </a>
+        <button className="rail-btn" aria-label="Talk to Pay Alone" onClick={() => void talk()}>
+          <Icon name="mic" />
+        </button>
+        <a href="#payments" className="rail-btn" aria-label="Your payments">
+          <Icon name="list" />
+        </a>
+        <a href="#code" className="rail-btn" aria-label="Your pay code">
+          <Icon name="qr" />
+        </a>
+        <a href="#safety" className="rail-btn" aria-label="Limit and fingerprint">
+          <Icon name="shield" />
+        </a>
+        <a href="#settings" className="rail-btn" aria-label="Voice and settings" onClick={openSettings}>
+          <Icon name="gear" />
+        </a>
+        <span className="rail-me">
+          <Peep name={customer.name ?? "you"} bg="ffffff" size={46} self />
+        </span>
+      </aside>
+
+      <main className="board" id="top">
+        <header className="board-top">
+          <div>
+            <p className="hi">Hi {name || "there"},</p>
+            <h1 className="welcome">Welcome back!</h1>
+            <p className="sub">{today}</p>
+          </div>
+          <div className="top-actions">
+            <span className="chip-soft">
+              <span className="live-dot" /> Test wallet connected
+            </span>
+            <a href="#settings" className="round" aria-label="Voice and settings" onClick={openSettings}>
+              <Icon name="gear" />
+            </a>
+          </div>
+        </header>
 
         {notice && (
           <div className={`status ${notice.good ? "good" : "bad"}`} role="status" aria-live="polite">
@@ -1328,11 +1505,157 @@ function Home(props: {
           </div>
         )}
         {props.loadError && <p role="alert">Cannot check for new requests: {props.loadError.message} Still trying.</p>}
+        {note && <p role="status">{note}</p>}
 
-        {live.mode && <LiveOverlay live={live} />}
+        <section className="row-1">
+          <div className="wallet-stack" aria-label="Your wallet">
+            <div className="stack-top">
+              <div className="stack-row">
+                <span>{name || "Your wallet"}</span>
+                <span className="op-mark">Open Payments</span>
+              </div>
+              <div className="stack-row strong">
+                <span>Pay code&nbsp;&nbsp;{customer.payCode.replace(/(\d{3})(\d{3})/, "$1 $2")}</span>
+                <span className="cur-mark">{customer.assetCode}</span>
+              </div>
+            </div>
+            <div className="stack-body">
+              <span className="notch" aria-hidden="true" />
+              <div className="frame">
+                <span className="coin" aria-hidden="true">
+                  {symbolOf(customer.assetCode)}
+                </span>
+                {active ? <Money a={active.left} size="xl" /> : <span className="money xl">No limit</span>}
+                <span className="frame-label">{active ? `Left to spend this ${active.every}, of ${formatAmount(active.limit)}` : "Set a spending limit below"}</span>
+                {active && (
+                  <span className="frame-bar" aria-hidden="true">
+                    <span style={{ width: `${leftPct}%` }} />
+                  </span>
+                )}
+              </div>
+              <div className="pill-row">
+                <button
+                  className="pill ghost"
+                  onClick={() => say(active ? `${speakAmount(active.left)} is left to spend this ${active.every}.` : "You have no spending limit set.")}
+                >
+                  <Icon name="speaker" size={20} /> Say it aloud
+                </button>
+                <button className="pill solid" onClick={() => void talk()} disabled={Boolean(live.mode)}>
+                  <Icon name="mic" size={20} /> Talk
+                </button>
+              </div>
+            </div>
+          </div>
 
+          <div className="card chart-card">
+            <div className="card-top">
+              <span className="chip-coin" aria-hidden="true">
+                {symbolOf(customer.assetCode)}
+              </span>
+              <b>Spent this week</b>
+              {active && <span className="pct">{pct}%</span>}
+            </div>
+            {active ? <Money a={active.spent} size="lg" /> : <Money a={{ value: week.total, assetCode: customer.assetCode, assetScale: customer.assetScale }} size="lg" />}
+            <span className="muted">
+              {week.paid} paid · {week.refused} not paid
+            </span>
+            <div className="bars" aria-hidden="true">
+              {week.days.map((d) => (
+                <span key={d.label} className={`bar ${d.today ? "today" : ""}`}>
+                  <span className="bar-col">
+                    <span className="bar-fill" style={{ height: `${Math.max(6, (d.value / week.max) * 100)}%` }} />
+                  </span>
+                  <span className="bar-d">{d.label}</span>
+                </span>
+              ))}
+            </div>
+          </div>
+        </section>
 
-        <section className="card" aria-labelledby="code-h">
+        <section className="row-2">
+          <div className="card" id="people">
+            <div className="card-head2">
+              <b>People you pay</b>
+            </div>
+            <div className="people">
+              {people.slice(0, 3).map((p) => (
+                <div key={p.name} className="person">
+                  <Peep name={p.name} size={56} />
+                  <b>{titleCase(p.name)}</b>
+                  <span>{p.paid ? `Paid ${p.paid === 1 ? "once" : `${p.paid} times`}` : "Asked recently"}</span>
+                </div>
+              ))}
+              <button className="person add" onClick={() => void talk()} aria-label="Send money by voice">
+                <span className="add-btn">+</span>
+                <b>Send</b>
+                <span>By voice</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="card">
+            <div className="card-head2">
+              <b>Recent activity</b>
+              <a className="link" href="#payments">
+                History
+              </a>
+            </div>
+            {props.history.length === 0 ? (
+              <p className="muted">No payments yet.</p>
+            ) : (
+              <ol className="activity">
+                {props.history.slice(0, 3).map((h) => (
+                  <li key={h.id}>
+                    <Peep name={h.merchantName} size={44} />
+                    <span className="act-text">
+                      <b>{titleCase(h.merchantName)}</b>
+                      <span>
+                        {h.status === "paid" ? "Paid" : h.status === "declined" ? "Refused" : h.status === "expired" ? "Timed out" : "Not paid"} ·{" "}
+                        {new Date(h.at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
+                      </span>
+                    </span>
+                    <span className={`act-amt ${h.status === "paid" ? "" : "off"}`}>
+                      {h.status === "paid" ? "−" : ""}
+                      {formatAmount(h.debitAmount ?? h.requested)}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </div>
+        </section>
+
+        <section className="row-3" id="safety">
+          <div className="safe">
+            <span className="safe-ic">
+              <Icon name="finger" />
+            </span>
+            <span>
+              <b>{customer.fingerprint.length ? "Fingerprint on" : "Fingerprint not set up"}</b>
+              <span>{customer.fingerprint.length ? "Every payment needs your finger" : "Set it up below"}</span>
+            </span>
+          </div>
+          <div className="safe">
+            <span className="safe-ic">
+              <Icon name="shield" />
+            </span>
+            <span>
+              <b>{active ? "Limit set by your wallet" : "No limit yet"}</b>
+              <span>{active ? `${formatAmount(active.limit)} a ${active.every}; it refuses more` : "Set one below"}</span>
+            </span>
+          </div>
+          <div className="safe">
+            <span className="safe-ic">
+              <Icon name="qr" />
+            </span>
+            <span>
+              <b>Pay code {customer.payCode.replace(/(\d{3})(\d{3})/, "$1 $2")}</b>
+              <span>It cannot take money</span>
+            </span>
+          </div>
+        </section>
+
+        <section className="card" aria-labelledby="code-h" id="code">
           <div className="paycode">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img className="qr" src="/api/wallet/paycode" alt={`QR code for pay code ${digits}`} />
@@ -1355,9 +1678,11 @@ function Home(props: {
           <Fingerprint customer={customer} refresh={props.refresh} say={say} />
         </div>
 
-        <History items={props.history} say={say} />
+        <div id="payments">
+          <History items={props.history} say={say} />
+        </div>
 
-        <details className="card">
+        <details className="card" id="settings">
           <summary>
             <span className="card-icon">
               <Icon name="gear" size={22} />
@@ -1429,8 +1754,26 @@ function Home(props: {
             Forget this device
           </button>
         </details>
+
+        <nav className="dock" aria-label="Main">
+          <a href="#top" className="dock-btn on" aria-label="Home">
+            <Icon name="home" size={24} />
+          </a>
+          <button className="dock-btn" aria-label="Talk to Pay Alone" onClick={() => void talk()}>
+            <Icon name="mic" size={24} />
+          </button>
+          <a href="#payments" className="dock-btn" aria-label="Your payments">
+            <Icon name="list" size={24} />
+          </a>
+          <a href="#settings" className="dock-btn" aria-label="Voice and settings" onClick={openSettings}>
+            <Icon name="gear" size={24} />
+          </a>
+        </nav>
       </main>
-    </>
+
+      <VoicePanel live={live} onTalk={() => void talk()} name={name} />
+      {live.mode && <LiveOverlay live={live} />}
+    </div>
   );
 }
 
@@ -1491,7 +1834,7 @@ function Limit({
   }
 
   return (
-    <section className="card" aria-labelledby="limit-h">
+    <section className="card" aria-labelledby="limit-h" id="limit">
       <div className="card-head">
         <span className="card-icon">
           <Icon name="shield" size={22} />

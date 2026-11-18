@@ -1,9 +1,9 @@
 import type { Metadata, Viewport } from "next";
 import { isSimulated } from "@/lib/op";
-import { Plus_Jakarta_Sans } from "next/font/google";
+import { Outfit } from "next/font/google";
 import "./globals.css";
 
-const sans = Plus_Jakarta_Sans({ subsets: ["latin"], variable: "--font-sans", display: "swap" });
+const sans = Outfit({ subsets: ["latin"], variable: "--font-sans", display: "swap" });
 
 export const dynamic = "force-dynamic";
 
