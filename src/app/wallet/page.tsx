@@ -559,6 +559,12 @@ function Alerts({ say }: { say: (t: string) => void }) {
       const reg = await navigator.serviceWorker.getRegistration("/");
       const sub = await reg?.pushManager.getSubscription();
       setStatus(sub && Notification.permission === "granted" ? "on" : "off");
+      let again = false;
+      try {
+        again = sessionStorage.getItem("alertsAfterReload") === "1";
+        sessionStorage.removeItem("alertsAfterReload");
+      } catch {}
+      if (again && !sub) setMessage("Tap Turn on alerts once more to finish.");
     })().catch(() => setStatus("unsupported"));
   }, []);
 
@@ -596,6 +602,18 @@ function Alerts({ say }: { say: (t: string) => void }) {
           15,
         );
       }
+      // iPadOS can leave subscribe() waiting forever when this page is not yet controlled by the
+      // service worker (first open of the Home Screen app). Reload once so it is, then finish.
+      if (!navigator.serviceWorker.controller) {
+        report("alerts: page not controlled, reloading", `sw=${reg.active?.state ?? "none"}`);
+        try {
+          sessionStorage.setItem("alertsAfterReload", "1");
+        } catch {}
+        setMessage("Almost done. The app reloads; then tap Turn on alerts once more.");
+        say("Almost done. The app reloads. Then tap Turn on alerts once more.");
+        setTimeout(() => window.location.reload(), 2500);
+        return;
+      }
       at("getting an alert address from Apple");
       const old = await reg.pushManager.getSubscription();
       const sub = old ?? (await limit(reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64urlToBytes(publicKey) }), 30));
@@ -607,7 +625,9 @@ function Alerts({ say }: { say: (t: string) => void }) {
       say(t);
     } catch (e) {
       const why = e instanceof Error ? e.message : errorText(e).message;
-      report(`alerts failed at ${step}:`, e instanceof Error ? e : why);
+      report(
+        `alerts failed at ${step}: ${why} | controlled=${Boolean(navigator.serviceWorker.controller)} permission=${Notification.permission} standalone=${isHomeScreenApp()}`,
+      );
       setMessage(`Alerts could not be turned on (${step}): ${why}`);
     } finally {
       setBusy(false);
