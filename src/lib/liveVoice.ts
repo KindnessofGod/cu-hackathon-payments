@@ -66,7 +66,8 @@ async function open(o: LiveOptions, s: Start, via: "webrtc" | "websocket", live:
   const common = {
     textOnly: false,
     dynamicVariables: s.dynamicVariables,
-    overrides: { agent: { language: s.language as never, firstMessage: s.dynamicVariables.first_message } },
+    // The opening sentence comes from the first_message dynamic variable; only the language is overridden.
+    overrides: { agent: { language: s.language as never } },
     clientTools: o.tools ?? {},
     onModeChange: ({ mode }: { mode: "speaking" | "listening" }) => o.onMode(mode),
     onMessage: (m: { message: string; role: "user" | "agent" }) => {
