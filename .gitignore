@@ -23,3 +23,4 @@ ios-hello/build/
 ios-hello/*.xcodeproj/
 ios-hello/Payload/
 ios-hello/*.ipa
+demo-audio/
