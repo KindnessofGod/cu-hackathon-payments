@@ -11,3 +11,15 @@ private*.key
 *.db
 .vercel/
 .DS_Store
+
+*.tsbuildinfo
+next-env.d.ts
+.data/
+ios/build/
+ios/*.xcodeproj/
+ios/Payload/
+ios/*.ipa
+ios-hello/build/
+ios-hello/*.xcodeproj/
+ios-hello/Payload/
+ios-hello/*.ipa

@@ -4,10 +4,30 @@
 Claude (Anthropic) was used throughout: research and planning (claude.ai), and code generation (Claude Code). All AI-written code was reviewed and run by the team. Prompts and context documents are in `docs/`.
 
 ## Prior work
-No application code existed before the Sunday 15 Nov 2026 onboarding call. Before it, the team did research only (documents in `docs/`). A separate local voice-model experiment (Igbo, Yoruba, Hausa, English) was run on 15 Nov on the owner's PC; its results are not yet in this repo. If any code from it is reused, list it here.
+No application code existed before the Sunday 15 Nov 2026 onboarding call. Before it, the team did research only (documents in `docs/`).
 
 ## Dependencies and licences
-(Builder: list every dependency with its licence, including `@interledger/open-payments`.)
+Runtime:
+- `@interledger/open-payments` 7.4.0 (Apache-2.0): the official Open Payments SDK.
+- `next` 16.4.6, `react` 19.3.0, `react-dom` 19.3.0 (MIT): web framework.
+- `qrcode` 1.5.4 (MIT): draws the pay code QR.
+- `jsqr` 1.4.0 (Apache-2.0): reads the pay code QR from the seller's camera.
+- `pg` 8.23.1 (MIT): Postgres driver for the deployed store.
+- `spitch` 1.49.0 (Apache-2.0): Spitch's official SDK, used for the Igbo voice.
+- `@simplewebauthn/server` 14.1.0 and `@simplewebauthn/browser` 14.0.0 (MIT): fingerprint (passkey) setup and checks.
+
+Development only:
+- `typescript` (Apache-2.0), `vitest` (MIT), `eslint` and `eslint-config-next` (MIT), type packages (MIT).
+
+The project was started from the `create-next-app` template (MIT) on 16 Nov 2026.
+
+Native iPad shell (`ios/`): Apple's own frameworks only (UIKit, WebKit, Security, LocalAuthentication). Built with XcodeGen (MIT) on GitHub Actions; installed with Sideloadly (third-party, free) on the owner's PC.
+
+## Development tooling (not part of the app)
+`.claude/skills/` holds Matt Pocock's agent skills (https://github.com/mattpocock/skills, v1.3.2, commit 5863806, MIT licence, copied 16 Nov 2026). They are instructions for the AI coding assistant (planning, TDD, review). They are third-party prior work, are not shipped in the app and contain no application code.
+
+## Companion work in the build window
+A voice feasibility test (English, Pidgin, Yoruba, Igbo, Hausa) was built during the competition build window, starting Sun 15 Nov 2026 after the onboarding call (its log's first timed entry is 14:16 WAT), in the separate repo https://github.com/KindnessofGod/ai-voice-demo (uploaded to GitHub on 16 Nov). It was also made with Claude's help. Its findings shape `docs/VOICE_PLAN.md`.
 
 ## External services
-Interledger test wallet (wallet.interledger-test.dev, play money). Voice providers planned: Spitch, ElevenLabs (not yet integrated).
+Interledger test wallet (wallet.interledger-test.dev, play money). Voice providers: ElevenLabs (text to speech, speech to text, and since 18 Nov the ElevenLabs Agents live conversation, whose language model is Gemini 2.5 Flash run by ElevenLabs) and Spitch (Igbo text to speech, Yoruba/Igbo/Hausa speech to text). In a live conversation the customer's voice is streamed to ElevenLabs, and the text of the conversation (and of the app's tool calls) is saved in the app's own database so the owner can check what was said. Only sentences built by our server from the payment record are sent to them; no personal data beyond the seller's public wallet name and the amounts.
