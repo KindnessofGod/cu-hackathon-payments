@@ -11,6 +11,7 @@ import { canListen, recordAnswer } from "@/lib/listen";
 import type { Intent } from "@/lib/voice/intent";
 import { nudgeAudio, report, startLive, type LiveMode, type LiveSession } from "@/lib/liveVoice";
 import { GlassOrb } from "@/components/GlassOrb";
+import { canWake, startWake } from "@/lib/wake";
 import { createAvatar } from "@dicebear/core";
 import * as openPeeps from "@dicebear/open-peeps";
 import "./dashboard.css";
@@ -191,6 +192,8 @@ interface Live {
   handlers: React.RefObject<{ approve?: () => Promise<string>; refuse?: () => Promise<string>; ended?: () => void }>;
   start: (requestId?: string) => Promise<boolean>;
   end: () => void;
+  /** Between conversations: free listening for a greeting ("hello", "Pay Alone"), which starts a new one. */
+  standby: boolean;
   /** After a payment: what is left of the limit, from fresh records, as a sentence for the agent. */
   leftNow: () => Promise<string>;
 }
@@ -270,6 +273,7 @@ export default function WalletPage() {
     liveModeRef.current = m;
     setLiveModeState(m);
   }, []);
+  const [standby, setStandby] = useState(false);
   const [liveLines, setLiveLines] = useState<{ who: "app" | "you"; text: string }[]>([]);
   const liveSession = useRef<LiveSession | null>(null);
   const liveActive = useRef(false);
@@ -423,6 +427,7 @@ export default function WalletPage() {
     handlers: liveHandlers,
     start: startLiveVoice,
     end: () => void liveSession.current?.end(),
+    standby,
     leftNow: async () => {
       const st = await refresh();
       const c = st?.customer?.cap;
@@ -473,6 +478,29 @@ export default function WalletPage() {
     }, 5000);
     return () => clearInterval(t);
   }, []);
+
+  // Between conversations, keep listening for free for a greeting, then start talking again: a blind
+  // customer should never have to find a button to restart the voice.
+  const wakeOk = Boolean(autoOk && !liveMode && !needTap && canWake());
+  useEffect(() => {
+    if (!wakeOk) {
+      setStandby(false);
+      return;
+    }
+    const pendingId = state?.pending?.debitAmount ? state.pending.id : undefined;
+    const stop = startWake(
+      () => {
+        setStandby(false);
+        void startLiveVoice(pendingId);
+      },
+      (why) => {
+        report("standby listening blocked:", why);
+        setStandby(false);
+      },
+    );
+    setStandby(Boolean(stop));
+    return () => stop?.();
+  }, [wakeOk, state?.pending?.id, state?.pending?.debitAmount, startLiveVoice]);
 
   // Speak a new request once when it arrives with its exact amount.
   const pending = state?.pending ?? null;
@@ -1334,8 +1362,16 @@ function VoiceOrb({ session, mode, small = false }: { session: React.RefObject<L
 
 // ---------- talking to Pay Alone ----------
 
-function liveLabel(mode: LiveMode | "") {
-  return mode === "connecting" ? "Connecting…" : mode === "speaking" ? "Speaking · interrupt any time" : mode === "listening" ? "Listening · talk naturally" : "Tap to talk";
+function liveLabel(mode: LiveMode | "", standby = false) {
+  return mode === "connecting"
+    ? "Connecting…"
+    : mode === "speaking"
+      ? "Speaking · interrupt any time"
+      : mode === "listening"
+        ? "Listening · talk naturally"
+        : standby
+          ? "Say “Hello Pay Alone” to talk"
+          : "Tap to talk";
 }
 
 /** The voice, in one lit panel: the glass orb, what was said, and the mic. Always on the side on iPad. */
@@ -1347,7 +1383,7 @@ function VoiceStage({ live, onTalk, name, full = false }: { live: Live; onTalk: 
       <header className="vp-top">
         <span>
           <b>Pay Alone</b>
-          <span className={`vp-status ${live.mode}`}>{live.mode === "speaking" ? "Speaking" : live.mode === "listening" ? "Listening" : live.mode === "connecting" ? "Connecting" : "Ready"}</span>
+          <span className={`vp-status ${live.mode}`}>{live.mode === "speaking" ? "Speaking" : live.mode === "listening" ? "Listening" : live.mode === "connecting" ? "Connecting" : live.standby ? "Waiting for “hello”" : "Ready"}</span>
         </span>
         {on && (
           <button className="round dark" onClick={live.end} aria-label="End conversation">
@@ -1363,7 +1399,7 @@ function VoiceStage({ live, onTalk, name, full = false }: { live: Live; onTalk: 
       <ol className="vp-talk" aria-label="Conversation">
         {lines.length === 0 && !on && (
           <li className="app">
-            Hello{name ? ` ${name}` : ""}. Ask me what is left to spend, who you paid, or tell me who to send money to.
+            Hello{name ? ` ${name}` : ""}. {live.standby ? "Just say “Hello Pay Alone” and I will answer. " : ""}Ask me what is left to spend, who you paid, or tell me who to send money to.
           </li>
         )}
         {lines.map((t, i) => (
@@ -1375,7 +1411,7 @@ function VoiceStage({ live, onTalk, name, full = false }: { live: Live; onTalk: 
       </ol>
       <div className="vp-dock">
         <span className="vp-tip" role="status">
-          {liveLabel(live.mode)}
+          {liveLabel(live.mode, live.standby)}
         </span>
         <button className={`vp-mic ${live.mode}`} onClick={on ? live.end : onTalk} aria-label={on ? "End conversation" : "Talk to Pay Alone"}>
           <span className="rp" />
