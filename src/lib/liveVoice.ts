@@ -2,7 +2,7 @@
 // The server gives a one-time token (WebRTC) and a signed URL (WebSocket) plus the facts from our records.
 // WebRTC is tried first; if it does not connect within a few seconds (VPNs, strict networks), the same
 // conversation is opened over a WebSocket. The agent cannot move money; the fingerprint approves.
-import { Conversation, type VoiceConversation } from "@elevenlabs/client";
+import { Conversation, stripAudioTags, type VoiceConversation } from "@elevenlabs/client";
 
 export type LiveMode = "connecting" | "listening" | "speaking";
 
@@ -71,7 +71,9 @@ async function open(o: LiveOptions, s: Start, via: "webrtc" | "websocket", live:
     clientTools: o.tools ?? {},
     onModeChange: ({ mode }: { mode: "speaking" | "listening" }) => o.onMode(mode),
     onMessage: (m: { message: string; role: "user" | "agent" }) => {
-      if (m.message) o.onLine(m.role === "user" ? "you" : "app", m.message);
+      // Tone tags such as [happy] shape the voice; they are not shown as words.
+      const text = m.role === "agent" ? stripAudioTags(m.message ?? "").replace(/\s{2,}/g, " ").trim() : (m.message ?? "");
+      if (text) o.onLine(m.role === "user" ? "you" : "app", text);
     },
     onDisconnect: (d: { reason: "error" | "agent" | "user"; message?: string }) => {
       if (!live.connected) return; // a failed first attempt is not the end of the conversation

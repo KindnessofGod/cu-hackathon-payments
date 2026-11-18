@@ -126,7 +126,7 @@ export class DomainError extends Error {
 }
 
 const store = () => getStore();
-const REQUEST_TTL_MS = Number(process.env.REQUEST_TTL_SECONDS ?? 180) * 1000;
+const REQUEST_TTL_MS = Number(process.env.REQUEST_TTL_SECONDS ?? 600) * 1000;
 
 function failureFrom(e: unknown): Failure {
   if (e instanceof OpError) {

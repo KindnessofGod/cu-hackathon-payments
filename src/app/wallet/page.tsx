@@ -229,6 +229,18 @@ export default function WalletPage() {
     return () => clearInterval(t);
   }, [refresh]);
 
+  /** Why there is nothing to pay, from the latest finished request (for example it timed out). */
+  const lastRef = useRef<RequestView | null>(null);
+  useEffect(() => {
+    lastRef.current = state?.last ?? null;
+  }, [state?.last]);
+  const nothingWaiting = () => {
+    const l = lastRef.current;
+    if (l?.status === "expired")
+      return `not paid: no payment is waiting. The request from ${l.merchantName} timed out after 10 minutes without an answer, so nothing was paid. ${l.merchantName} can send it again.`;
+    return "not paid: no payment is waiting right now. Nothing was paid.";
+  };
+
   const startLiveVoice = useCallback(
     async (requestId?: string): Promise<boolean> => {
       if (liveActive.current) return true;
@@ -248,7 +260,7 @@ export default function WalletPage() {
             liveHandlers.current.ended?.();
           },
           tools: {
-            approve_payment: () => liveHandlers.current.approve?.() ?? Promise.resolve("not paid: no payment is waiting right now."),
+            approve_payment: () => liveHandlers.current.approve?.() ?? Promise.resolve(nothingWaiting()),
             refuse_payment: () => liveHandlers.current.refuse?.() ?? Promise.resolve("nothing to refuse: no payment is waiting right now."),
             send_money: async (p) => {
               try {
