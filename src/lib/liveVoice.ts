@@ -10,6 +10,8 @@ export type LiveSession = {
   end: () => Promise<void>;
   /** 0..1 loudness of the customer's microphone and of the agent's voice, for the moving orb. */
   levels: () => { input: number; output: number };
+  /** Tells the agent something new without making it speak (e.g. what is left after a payment). */
+  context: (text: string) => void;
 };
 
 export type LiveOptions = {
@@ -20,7 +22,7 @@ export type LiveOptions = {
   onLine: (who: "you" | "app", text: string) => void;
   onEnd: (reason: "agent" | "user" | "error", message?: string) => void;
   /** Client tools the agent may call (the payment agent: approve_payment and refuse_payment). */
-  tools?: Record<string, () => Promise<string>>;
+  tools?: Record<string, (params: Record<string, unknown>) => Promise<string>>;
 };
 
 type Start = { token: string; language: string; dynamicVariables: Record<string, string> };
@@ -62,5 +64,6 @@ export async function startLive(o: LiveOptions): Promise<LiveSession> {
   return {
     end: () => conv.endSession(),
     levels: () => ({ input: conv.getInputVolume(), output: conv.getOutputVolume() }),
+    context: (text: string) => conv.sendContextualUpdate(text),
   };
 }

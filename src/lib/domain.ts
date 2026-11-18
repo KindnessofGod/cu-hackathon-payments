@@ -96,6 +96,8 @@ export interface PaymentRequest {
   failure?: Failure;
   createdAt: string;
   expiresAt: string;
+  /** The customer started this payment themselves (by voice), instead of a seller asking. */
+  outgoing?: boolean;
 }
 
 interface GrantSession {
@@ -196,6 +198,60 @@ export async function createRequest(payCode: string, amountMajor: string): Promi
     status: "waiting",
     createdAt: new Date(now).toISOString(),
     expiresAt,
+  };
+  await store().put("requests", request.id, request);
+  return request;
+}
+
+/** A saved person whose name matches what the customer said. Ignores case, spaces and punctuation. */
+export function findContact(customer: Customer, said: string): Contact | null {
+  const norm = (x: string) => x.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const want = norm(said);
+  if (!want) return null;
+  const all = Object.values(customer.contacts);
+  return (
+    all.find((c) => norm(c.name) === want) ??
+    all.find((c) => norm(c.name).includes(want) || want.includes(norm(c.name))) ??
+    null
+  );
+}
+
+/**
+ * The customer sends money to someone they have paid before (asked for by voice). It becomes an open
+ * request like a seller's: the wallet quotes it, and it is approved the same way, with the fingerprint.
+ * The incoming payment is created on the receiver's wallet with a non-interactive grant, as Open
+ * Payments allows for any client.
+ */
+export async function sendToContact(customer: Customer, to: string, amountMajor: string): Promise<PaymentRequest> {
+  const contact = findContact(customer, to);
+  if (!contact) {
+    const names = Object.values(customer.contacts).map((c) => c.name);
+    throw new DomainError(
+      "not_found",
+      names.length ? `There is nobody called ${to} among the people you have paid. You have paid: ${names.join(", ")}.` : "You have not paid anybody through this app yet, so there is nobody to send to.",
+    );
+  }
+  if (await pendingRequest(customer)) throw new DomainError("wrong_state", "Another payment is waiting. Answer that one first.");
+  const g = gateway("wallet");
+  const wallet = await g.getWallet(contact.walletId);
+  const minor = parseMajor(amountMajor.replace(/[^0-9.]/g, ""), wallet.assetScale);
+  if (!minor) throw new DomainError("bad_input", "Say an amount greater than zero, for example five hundred.");
+  const now = Date.now();
+  const expiresAt = new Date(now + REQUEST_TTL_MS).toISOString();
+  const requested: Amount = { value: minor, assetCode: wallet.assetCode, assetScale: wallet.assetScale };
+  const incoming = await g.createIncomingPayment({ wallet, amount: requested, expiresAt, description: "Sent with Pay Alone" });
+  const request: PaymentRequest = {
+    id: randomToken(12),
+    merchantWalletId: wallet.id,
+    merchantName: contact.name,
+    customerId: customer.id,
+    customerPayCode: customer.payCode,
+    requested: incoming.incomingAmount ?? requested,
+    incomingPaymentUrl: incoming.id,
+    status: "waiting",
+    createdAt: new Date(now).toISOString(),
+    expiresAt,
+    outgoing: true,
   };
   await store().put("requests", request.id, request);
   return request;
@@ -671,6 +727,7 @@ export function publicRequest(r: PaymentRequest, customer: Customer) {
     status: r.status,
     merchantName: r.merchantName,
     knownPayee: Boolean(known),
+    outgoing: Boolean(r.outgoing),
     timesPaidBefore: known?.paidCount ?? 0,
     requested: r.requested,
     debitAmount: r.quote?.debitAmount,

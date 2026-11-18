@@ -1,18 +1,39 @@
-import { capSummary, getRequestFor, isOpen } from "@/lib/domain";
+import { capSummary, customerHistory, getRequestFor, isOpen } from "@/lib/domain";
 import { fail, requireCustomer } from "@/lib/http";
 import { exceedsCap, remainingOfCap, speakAmount } from "@/lib/money";
 import { askingSentence, isLang, type Lang } from "@/lib/voice/sentences";
 import { AGENT_LANG, agentToken } from "@/lib/voice/agentToken";
 
 /**
- * Starts a live voice conversation (ElevenLabs Agents) about one waiting request.
- * Returns a one-time conversation token and the facts the agent may use. Every name and amount
- * comes from our records and the wallet's quote; the agent is told to use only these. The agent
- * cannot move money: its only tools open the fingerprint prompt or refuse, both in the browser.
+ * Starts the live voice conversation with the one Pay Alone agent (ElevenLabs Agents, WebRTC).
+ * Returns a one-time token and the facts the agent may use: this customer's records in this app and,
+ * if `id` is given, the payment waiting for an answer. Every name and amount comes from our records
+ * and the wallet's quote. The agent's tools run in the browser: it can start a payment to someone
+ * the customer has paid before and open the fingerprint prompt, but only the fingerprint (or, with
+ * no fingerprint set up, a tap) approves a payment.
  */
-const AGENT_ID = process.env.ELEVENLABS_AGENT_ID || "agent_3901m7nzvq1teyj9pm23e4gfqtmz";
+const AGENT_ID = process.env.ELEVENLABS_AGENT_ID || "agent_5501m7pg7m7eezp8p00mnemah8g0";
 
 const NAMES: Record<Lang, string> = { en: "English", pcm: "Nigerian Pidgin", yo: "Yoruba", ig: "English (the customer chose Igbo, which this voice cannot speak yet)", ha: "Hausa" };
+const HELLO: Record<Lang, string> = {
+  en: "Hello, I am Pay Alone. How can I help you?",
+  pcm: "How far, na me be Pay Alone. Wetin I fit do for you?",
+  yo: "Ẹ n lẹ, èmi ni Pay Alone. Kí ni mo lè ṣe fún yín?",
+  ig: "Hello, I am Pay Alone. How can I help you?",
+  ha: "Sannu, ni ne Pay Alone. Me zan iya yi maka?",
+};
+const STATUS: Record<string, string> = {
+  paid: "paid",
+  declined: "refused, nothing paid",
+  expired: "not answered in time, nothing paid",
+  failed: "did not go through, nothing paid",
+  consent: "waiting for the wallet's own page",
+  paying: "being paid",
+};
+
+function when(iso: string) {
+  return new Date(iso).toLocaleString("en-GB", { timeZone: "Africa/Lagos", weekday: "long", day: "numeric", month: "long", hour: "numeric", minute: "2-digit", hour12: true });
+}
 
 export async function GET(req: Request) {
   try {
@@ -20,15 +41,24 @@ export async function GET(req: Request) {
     const lang: Lang = isLang(q.get("lang")) ? (q.get("lang") as Lang) : "en";
     const native = q.get("native") === "1";
     const customer = await requireCustomer();
-    const r = await getRequestFor(customer, q.get("id") ?? "");
-    if (!isOpen(r) || !r.quote) return Response.json({ error: { kind: "not_ready", message: "This request is not waiting for an answer." } }, { status: 409 });
+    const id = q.get("id");
+    const r = id ? await getRequestFor(customer, id) : null;
+    if (r && (!isOpen(r) || !r.quote)) return Response.json({ error: { kind: "not_ready", message: "This request is not waiting for an answer." } }, { status: 409 });
+
     const token = await agentToken(AGENT_ID);
     if (!token) return Response.json({ error: { kind: "unavailable", message: "Live voice is not available right now." } }, { status: 502 });
 
-    const { receiveAmount, debitAmount } = r.quote;
+    // The customer's own records.
     const cap = capSummary(customer.cap);
     const active = cap && cap.status === "active" ? cap : null;
-    const over = Boolean(active && exceedsCap(active.limit, active.spent, debitAmount));
+    const history = (await customerHistory(customer)).slice(0, 15).map((h) => {
+      const what = h.status === "paid" && h.debitAmount ? `, ${speakAmount(h.debitAmount)} left the account` : h.failure?.message ? ` (${h.failure.message})` : "";
+      return `- ${when(h.at)}: ${h.merchantName}, ${speakAmount(h.requested)}; ${STATUS[h.status] ?? h.status}${what}.`;
+    });
+    const contacts = Object.values(customer.contacts)
+      .sort((a, b) => b.lastPaidAt.localeCompare(a.lastPaidAt))
+      .slice(0, 15)
+      .map((c) => `${c.name} (paid ${c.paidCount} time${c.paidCount === 1 ? "" : "s"}, last on ${when(c.lastPaidAt)})`);
     const hasDevice = Boolean(customer.deviceKeys?.length);
     const hasPasskey = Boolean(customer.passkeys?.length);
     const approveHow =
@@ -39,24 +69,45 @@ export async function GET(req: Request) {
           : hasDevice
             ? "Open the Pay Alone app on this iPad to approve with your fingerprint."
             : "Tap the screen once to pay.";
-    const known = Boolean(customer.contacts[r.merchantWalletId]);
-    const firstLang: Lang = AGENT_LANG[lang] === "en" && lang !== "pcm" ? "en" : lang;
+
+    // The waiting payment, if any. Amounts from the wallet's quote.
+    let pending = "none";
+    let first = HELLO[lang];
+    if (r && r.quote) {
+      const { receiveAmount, debitAmount } = r.quote;
+      const over = Boolean(active && exceedsCap(active.limit, active.spent, debitAmount));
+      const timesPaid = customer.contacts[r.merchantWalletId]?.paidCount ?? 0;
+      pending = [
+        r.outgoing ? `The customer is SENDING money to ${r.merchantName} (they asked for this).` : `${r.merchantName} is ASKING the customer for money.`,
+        `${r.merchantName} will receive ${speakAmount(receiveAmount)}.`,
+        `${speakAmount(debitAmount)} will leave the customer's account, fees included.`,
+        `Times paid this person before: ${timesPaid}.`,
+        active ? (over ? "This is OVER the limit, so the wallet will refuse it." : `After this payment, ${speakAmount(remainingOfCap(active.left, debitAmount))} will be left of the limit.`) : "No limit is set, so the wallet will open its own page to confirm this one payment.",
+      ].join(" ");
+      if (!r.outgoing) {
+        const firstLang: Lang = lang === "ig" ? "en" : lang;
+        first = askingSentence(firstLang, { name: r.merchantName, known: timesPaid > 0, receive: receiveAmount, debit: debitAmount });
+      }
+    }
 
     return Response.json(
       {
         token,
         language: AGENT_LANG[lang],
         dynamicVariables: {
-          first_message: `${askingSentence(firstLang, { name: r.merchantName, known, receive: receiveAmount, debit: debitAmount })}`,
+          first_message: first,
+          customer_name: customer.wallet.publicName ?? "the customer",
           language_name: NAMES[lang],
-          merchant_name: r.merchantName,
-          amount: speakAmount(receiveAmount),
-          debit: speakAmount(debitAmount),
-          times_paid: String(customer.contacts[r.merchantWalletId]?.paidCount ?? 0),
-          limit_text: active ? `${speakAmount(active.limit)} each ${active.every}` : "no limit is set, so the wallet will open its own page to confirm this one payment",
-          left_text: active ? speakAmount(active.left) : "not known, no limit is set",
-          left_after_text: active ? (over ? "the payment is over the limit, so the wallet will refuse it" : speakAmount(remainingOfCap(active.left, debitAmount))) : "not known",
-          over_limit: over ? "yes" : "no",
+          now: when(new Date().toISOString()),
+          pay_code: customer.payCode.split("").join(" "),
+          limit_text: active ? `${speakAmount(active.limit)} each ${active.every}` : cap ? "the limit was stopped, so every payment needs the wallet's own page" : "no limit set yet, so every payment needs the wallet's own page",
+          spent_text: active ? speakAmount(active.spent) : "not tracked, no active limit",
+          left_text: active ? speakAmount(active.left) : "not known, no active limit",
+          period_ends: active?.periodEnds ? when(active.periodEnds) : "not known",
+          fingerprint_text: hasDevice || hasPasskey ? "set up; every payment needs the fingerprint" : "not set up; a tap on the screen approves",
+          contacts_text: contacts.length ? contacts.join("; ") : "nobody yet",
+          history_text: history.length ? history.join("\n") : "- nothing yet",
+          pending_text: pending,
           approve_how: approveHow,
         },
       },

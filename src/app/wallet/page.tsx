@@ -51,6 +51,8 @@ interface RequestView {
   status: "waiting" | "quoted" | "consent" | "paying" | "paid" | "declined" | "expired" | "failed";
   merchantName: string;
   knownPayee: boolean;
+  /** The customer asked to send this by voice; no seller asked. */
+  outgoing?: boolean;
   timesPaidBefore: number;
   requested: Amount;
   debitAmount?: Amount;
@@ -82,6 +84,20 @@ interface State {
   suggestedWalletAddress?: string;
   pending?: RequestView | null;
   last?: RequestView | null;
+}
+
+/** The one live voice conversation (ElevenLabs agent), shared by the home screen and the payment screen. */
+interface Live {
+  mode: LiveMode | "";
+  lines: { who: "app" | "you"; text: string }[];
+  session: React.RefObject<LiveSession | null>;
+  active: React.RefObject<boolean>;
+  /** Set by the payment screen while it is shown, so the agent can pay or refuse the waiting payment. */
+  handlers: React.RefObject<{ approve?: () => Promise<string>; refuse?: () => Promise<string>; ended?: () => void }>;
+  start: (requestId?: string) => Promise<boolean>;
+  end: () => void;
+  /** After a payment: what is left of the limit, from fresh records, as a sentence for the agent. */
+  leftNow: () => Promise<string>;
 }
 
 const voice = new BrowserSpeechOutput();
@@ -122,6 +138,10 @@ function savePref(key: string, value: string) {
 }
 
 function requestSentence(r: RequestView): string {
+  if (r.outgoing)
+    return r.debitAmount && r.receiveAmount
+      ? `You are sending ${speakAmount(r.receiveAmount)} to ${r.merchantName}. ${speakAmount(r.debitAmount)} will leave your account.`
+      : `You are sending ${speakAmount(r.requested)} to ${r.merchantName}. Getting the exact amount from your wallet.`;
   const who = r.knownPayee ? r.merchantName : `A new person you have never paid, called ${r.merchantName},`;
   if (!r.debitAmount || !r.receiveAmount) return `${who} is asking for ${speakAmount(r.requested)}. Getting the exact amount from your wallet.`;
   return `${who} is asking for ${speakAmount(r.receiveAmount)}. ${speakAmount(r.debitAmount)} will leave your account.`;
@@ -145,9 +165,14 @@ export default function WalletPage() {
   const [prefs, setPrefs] = useState<VoicePrefs>({ on: true, natural: true, listen: true, lang: "en" });
   const appVoice = prefs.on;
   const spokenFor = useRef<string>("");
-  // While a live voice conversation is finishing (telling the result), keep its screen up even
-  // though the request is no longer pending.
-  const [held, setHeld] = useState<RequestView | null>(null);
+  // The one live voice conversation.
+  const [liveMode, setLiveMode] = useState<LiveMode | "">("");
+  const [liveLines, setLiveLines] = useState<{ who: "app" | "you"; text: string }[]>([]);
+  const liveSession = useRef<LiveSession | null>(null);
+  const liveActive = useRef(false);
+  const liveHandlers = useRef<{ approve?: () => Promise<string>; refuse?: () => Promise<string>; ended?: () => void }>({});
+  const liveFor = useRef<string>(""); // the request the conversation was started about, or "" for none
+  const sentByVoice = useRef<string>("");
 
   const say = useCallback(
     (text: string) => {
@@ -204,11 +229,90 @@ export default function WalletPage() {
     return () => clearInterval(t);
   }, [refresh]);
 
+  const startLiveVoice = useCallback(
+    async (requestId?: string): Promise<boolean> => {
+      if (liveActive.current) return true;
+      liveActive.current = true;
+      liveFor.current = requestId ?? "";
+      setLiveLines([]);
+      try {
+        liveSession.current = await startLive({
+          startUrl: `/api/voice/agent?native=${inNativeApp() ? "1" : "0"}${requestId ? `&id=${encodeURIComponent(requestId)}` : ""}`,
+          lang: prefs.lang,
+          onMode: setLiveMode,
+          onLine: (who, text) => setLiveLines((l) => [...l, { who, text }]),
+          onEnd: () => {
+            liveActive.current = false;
+            liveSession.current = null;
+            setLiveMode("");
+            liveHandlers.current.ended?.();
+          },
+          tools: {
+            approve_payment: () => liveHandlers.current.approve?.() ?? Promise.resolve("not paid: no payment is waiting right now."),
+            refuse_payment: () => liveHandlers.current.refuse?.() ?? Promise.resolve("nothing to refuse: no payment is waiting right now."),
+            send_money: async (p) => {
+              try {
+                const res = await api<{ id: string; to: string }>("/api/wallet/send", { method: "POST", body: { to: String(p.to ?? ""), amount: String(p.amount ?? "") } });
+                sentByVoice.current = res.id;
+                liveFor.current = res.id;
+                for (let i = 0; i < 25; i++) {
+                  const st = await refresh();
+                  const r = st?.pending;
+                  if (r && r.id === res.id && r.debitAmount && r.receiveAmount) {
+                    const consent = r.needsWalletConsent ? " There is no spending limit, so after the fingerprint the wallet will open its own page to confirm." : "";
+                    return `ready, not paid yet: ${r.merchantName} will receive ${speakAmount(r.receiveAmount)}. ${speakAmount(r.debitAmount)} will leave the customer's account, fees included.${consent} Ask the customer if they want to pay.`;
+                  }
+                  if (!r || r.id !== res.id) {
+                    if (st?.last?.id === res.id) return `could not prepare: ${st.last.failure?.message ?? "the wallet did not accept it"}. Nothing was paid.`;
+                  }
+                  await new Promise((w) => setTimeout(w, 1000));
+                }
+                return "not ready: the wallet did not give the exact amount in time. Nothing was paid.";
+              } catch (e) {
+                return `could not prepare: ${errorText(e).message} Nothing was paid.`;
+              }
+            },
+          },
+        });
+        return true;
+      } catch (e) {
+        console.error(e);
+        liveActive.current = false;
+        liveSession.current = null;
+        setLiveMode("");
+        return false;
+      }
+    },
+    [prefs.lang, refresh],
+  );
+
+  const live: Live = {
+    mode: liveMode,
+    lines: liveLines,
+    session: liveSession,
+    active: liveActive,
+    handlers: liveHandlers,
+    start: startLiveVoice,
+    end: () => void liveSession.current?.end(),
+    leftNow: async () => {
+      const st = await refresh();
+      const c = st?.customer?.cap;
+      return c && c.status === "active" ? ` Left of the limit now: ${speakAmount(c.left)} of ${speakAmount(c.limit)}.` : "";
+    },
+  };
+
   // Speak a new request once when it arrives with its exact amount.
   const pending = state?.pending ?? null;
   useEffect(() => {
     if (pending && pending.debitAmount && spokenFor.current !== pending.id) {
       spokenFor.current = pending.id;
+      if (pending.id === sentByVoice.current) return; // the customer asked for it by voice; the agent is already talking about it
+      if (liveActive.current && liveFor.current !== pending.id) {
+        // A seller asked during a conversation: start again about this request, so the agent has its facts.
+        liveSession.current?.end();
+        setTimeout(() => void startLiveVoice(pending.id), 800);
+        return;
+      }
       if (inNativeApp() && prefs.on && prefs.listen && canListen()) return; // the approval screen asks by voice itself
       if (prefs.on && prefs.listen && canListen()) {
         sayOurs({ what: "asking", id: pending.id }, `${requestSentence(pending)} Tap the screen to talk about it.`);
@@ -216,7 +320,7 @@ export default function WalletPage() {
       }
       say(`${requestSentence(pending)} Tap anywhere to hear this again.`);
     }
-  }, [pending, say, sayOurs, prefs]);
+  }, [pending, say, sayOurs, prefs, startLiveVoice]);
 
   const finish = useCallback(
     async (r: RequestView, quiet = false) => {
@@ -255,19 +359,18 @@ export default function WalletPage() {
   }
   if (!state.customer) return <Setup suggested={state.suggestedWalletAddress ?? ""} simulated={state.simulated} onDone={() => void refresh()} />;
 
-  const shown = held ?? pending;
-  if (shown)
+  if (pending)
     return (
       <Approve
-        key={shown.id}
-        request={shown}
+        key={pending.id}
+        request={pending}
         fingerprint={state.customer.fingerprint}
         cap={state.customer.cap}
         prefs={prefs}
         say={say}
         sayOurs={sayOurs}
         onDone={finish}
-        hold={setHeld}
+        live={live}
       />
     );
 
@@ -290,6 +393,7 @@ export default function WalletPage() {
       say={say}
       refresh={() => void refresh()}
       setNotice={setNotice}
+      live={live}
     />
   );
 }
@@ -362,7 +466,7 @@ function Approve({
   say,
   sayOurs,
   onDone,
-  hold,
+  live,
 }: {
   request: RequestView;
   fingerprint: CustomerView["fingerprint"];
@@ -371,7 +475,7 @@ function Approve({
   say: (t: string) => void;
   sayOurs: (params: Record<string, string>, fallbackText: string) => void;
   onDone: (r: RequestView, quiet?: boolean) => void;
-  hold: (r: RequestView | null) => void;
+  live: Live;
 }) {
   const needsFinger = fingerprint.length > 0;
   const [armed, setArmed] = useState(false);
@@ -381,11 +485,8 @@ function Approve({
   const [message, setMessage] = useState("");
   const buttonRef = useRef<HTMLButtonElement>(null);
   const autoAsked = useRef(false);
-  // Live conversation (ElevenLabs Agents). While it runs, the agent does the talking.
-  const [live, setLive] = useState<LiveMode | "">("");
-  const liveRef = useRef<LiveSession | null>(null);
-  const liveOn = useRef(false);
-  const liveResult = useRef<RequestView | null>(null);
+  // While the live conversation runs, the agent does the talking.
+  const liveOn = live.active;
   const toolWait = useRef<((s: string) => void) | null>(null);
   const toolText = useRef("");
   const armedRef = useRef(false);
@@ -411,8 +512,32 @@ function Approve({
     return () => clearTimeout(t);
   }, [armed]);
 
-  // End the live conversation if this screen goes away.
-  useEffect(() => () => void liveRef.current?.end(), []);
+  // Let the agent pay or refuse this request while it is on screen.
+  useEffect(() => {
+    const h = live.handlers;
+    h.current = {
+      approve: async () => {
+        toolText.current = "";
+        const s = await activateRef.current(true);
+        if (s === "done") return toolText.current || "not paid: the wallet did not answer.";
+        if (s === "waiting") {
+          setMessage(needsFinger ? "Tap the screen once, then rest your finger on the Home button." : "Tap the screen once to pay.");
+          return new Promise<string>((res) => (toolWait.current = res));
+        }
+        return s || "not paid: nothing happened.";
+      },
+      refuse: () => {
+        const p = new Promise<string>((res) => (toolWait.current = res));
+        void refuseRef.current();
+        return p;
+      },
+      ended: () => settleTool("not paid: the conversation ended."),
+    };
+    return () => {
+      h.current = {};
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Inside the iPad app the request is read out and the app listens without any tap at all.
   useEffect(() => {
@@ -429,72 +554,30 @@ function Approve({
     w?.(text);
   }
 
-  /** Finishes a payment or refusal. In a live conversation the agent tells the result first. */
-  function done(r: RequestView) {
+  /** Finishes a payment or refusal. In a live conversation the agent tells the result. */
+  async function done(r: RequestView) {
     if (!liveOn.current) return onDone(r);
-    liveResult.current = r;
     const paid = r.status === "paid" && r.paid;
-    toolText.current =
-      paid
-        ? `paid: ${speakAmount(r.paid!.debitAmount)} left the customer's account to ${r.merchantName}.`
-        : r.status === "declined"
-          ? "refused. No money moved."
-          : `not paid: ${r.failure?.message ?? "the wallet did not pay"}. No money moved.`;
+    const left = paid ? await live.leftNow() : "";
+    toolText.current = paid
+      ? `paid: ${speakAmount(r.paid!.debitAmount)} left the customer's account to ${r.merchantName}.${left}`
+      : r.status === "declined"
+        ? "refused. No money moved."
+        : `not paid: ${r.failure?.message ?? "the wallet did not pay"}. No money moved.`;
     settleTool(toolText.current);
-    // If the agent does not end the call itself, close it after it has had time to speak.
-    setTimeout(() => void liveRef.current?.end(), 15000);
+    onDone(r, true);
   }
 
   /** The live conversation: natural voice, the customer can interrupt, the agent answers questions. */
   async function talk_(): Promise<void> {
     if (liveOn.current || busy || !ready) return;
-    liveOn.current = true;
-    hold(request);
     setMessage("Connecting the voice…");
-    try {
-      liveRef.current = await startLive({
-        startUrl: `/api/voice/agent?id=${encodeURIComponent(request.id)}&native=${inNativeApp() ? "1" : "0"}`,
-        lang: prefs.lang,
-        onMode: (m) => setLive(m),
-        onLine: (who, text) => setTalk((t) => [...t, { who, text }]),
-        onEnd: () => {
-          liveOn.current = false;
-          liveRef.current = null;
-          setLive("");
-          settleTool("not paid: the conversation ended.");
-          const r = liveResult.current;
-          hold(null);
-          if (r) onDone(r, true);
-          else setMessage("The conversation ended. Tap the screen to talk again.");
-        },
-        tools: {
-        approve_payment: async () => {
-          toolText.current = "";
-          const s = await activate(true);
-          if (s === "done") return toolText.current || "not paid: the wallet did not answer.";
-          if (s === "waiting") {
-            setMessage(needsFinger ? "Tap the screen once, then rest your finger on the Home button." : "Tap the screen once to pay.");
-            return new Promise<string>((res) => (toolWait.current = res));
-          }
-          return s;
-        },
-        refuse_payment: async () => {
-          const p = new Promise<string>((res) => (toolWait.current = res));
-          void refuse();
-          return p;
-        },
-        },
-      });
+    if (await live.start(request.id)) {
       setMessage("Talk naturally. Ask who is asking, how much is left, or say pay or no.");
-    } catch (e) {
-      console.error(e);
-      liveOn.current = false;
-      liveRef.current = null;
-      setLive("");
-      hold(null);
-      // The live voice could not start: use the simpler voice answers instead.
-      void askByVoice();
+      return;
     }
+    // The live voice could not start: use the simpler voice answers instead.
+    void askByVoice();
   }
 
   /** Speaks one of the server's sentences in the chosen language (device English voice as fallback). */
@@ -660,7 +743,7 @@ function Approve({
       if (res.redirectUrl) {
         setMessage("Opening your wallet's page to confirm this payment.");
         settleTool("not paid yet: there is no spending limit, so the wallet is opening its own page to confirm this one payment.");
-        void liveRef.current?.end();
+        live.end();
         setTimeout(() => window.location.assign(res.redirectUrl!), 300);
         return "redirect";
       }
@@ -671,6 +754,11 @@ function Approve({
     }
     return "done";
   }
+
+  const activateRef = useRef(activate);
+  activateRef.current = activate;
+  const refuseRef = useRef(refuse);
+  refuseRef.current = refuse;
 
   async function refuse() {
     setBusy(true);
@@ -687,15 +775,15 @@ function Approve({
     ? "Getting the exact amount from your wallet…"
     : busy
       ? "Paying. Please wait."
-      : live && armed
+      : live.mode && armed
         ? needsFinger
           ? "Tap once, then rest your finger on the Home button."
           : "Tap the screen to pay."
-        : live === "connecting"
+        : live.mode === "connecting"
           ? "Connecting the voice…"
-          : live === "speaking"
+          : live.mode === "speaking"
             ? "Speaking… you can interrupt any time."
-            : live === "listening"
+            : live.mode === "listening"
               ? "Listening… talk naturally."
               : hearing === "speaking"
         ? "Reading the request…"
@@ -724,9 +812,9 @@ function Approve({
         disabled={busy}
         aria-describedby="approve-how"
       >
-        {live ? <VoiceOrb session={liveRef} mode={live} /> : <Avatar name={request.merchantName} />}
+        {live.mode ? <VoiceOrb session={live.session} mode={live.mode} /> : <Avatar name={request.merchantName} />}
         {!request.knownPayee && <span className="new-tag">New person</span>}
-        <span className="who">{request.merchantName} is asking for</span>
+        <span className="who">{request.outgoing ? `Sending to ${request.merchantName}` : `${request.merchantName} is asking for`}</span>
         <span className="amount">{formatAmount(request.receiveAmount ?? request.requested)}</span>
         {request.debitAmount && <span className="debit">{formatAmount(request.debitAmount)} will leave your account</span>}
         <span className="how" id="approve-how">
@@ -737,9 +825,9 @@ function Approve({
       <div className="sr-only" role="status" aria-live="assertive">
         {message}
       </div>
-      {talk.length > 0 && (
+      {(live.mode ? live.lines : talk).length > 0 && (
         <ol className="talk" aria-label="Conversation">
-          {talk.slice(-6).map((t, i) => (
+          {(live.mode ? live.lines : talk).slice(-6).map((t, i) => (
             <li key={i} className={t.who}>
               <span className="sr-only">{t.who === "you" ? "You said: " : "Pay Alone said: "}</span>
               {t.text}
@@ -782,77 +870,48 @@ function VoiceOrb({ session, mode }: { session: React.RefObject<LiveSession | nu
   );
 }
 
-// ---------- banking assistant ----------
+// ---------- talking to Pay Alone ----------
 
-/**
- * "Talk to Pay Alone": a live voice assistant on the home screen, any time. It knows only this customer's
- * records in this app (limit, spending, who they paid, pay code) and how the app works. It has no tool
- * that moves money. A payment request arriving closes it, because the request screen takes over.
- */
-function Assistant({ lang, say }: { lang: Lang; say: (t: string) => void }) {
-  const [mode, setMode] = useState<LiveMode | "">("");
-  const [lines, setLines] = useState<{ who: "app" | "you"; text: string }[]>([]);
+/** "Talk to Pay Alone" on the home screen: starts the one live conversation, any time. */
+function TalkCard({ live, say }: { live: Live; say: (t: string) => void }) {
   const [note, setNote] = useState("");
-  const session = useRef<LiveSession | null>(null);
-  const starting = useRef(false);
-
-  useEffect(() => () => void session.current?.end(), []);
-
   async function start() {
-    if (starting.current || session.current) return;
-    starting.current = true;
-    setLines([]);
     setNote("");
-    try {
-      session.current = await startLive({
-        startUrl: "/api/voice/assistant",
-        lang,
-        onMode: setMode,
-        onLine: (who, text) => setLines((l) => [...l, { who, text }]),
-        onEnd: () => {
-          session.current = null;
-          setMode("");
-        },
-      });
-    } catch (e) {
-      console.error(e);
-      session.current = null;
-      setMode("");
-      const text = "The voice assistant is not available right now. Please try again in a moment.";
+    if (!(await live.start())) {
+      const text = "The voice is not available right now. Please try again in a moment.";
       setNote(text);
       say(text);
-    } finally {
-      starting.current = false;
     }
   }
+  return (
+    <section className="card assistant-card" aria-labelledby="assist-h">
+      <button className="wide assistant-start" onClick={() => void start()} disabled={Boolean(live.mode)}>
+        <Icon name="mic" size={26} />
+        <span id="assist-h">Talk to Pay Alone</span>
+      </button>
+      <p className="muted">Ask what is left of your limit or who you paid, or say who to send money to. Your fingerprint confirms every payment.</p>
+      {note && <p role="status">{note}</p>}
+    </section>
+  );
+}
 
-  const label = mode === "connecting" ? "Connecting…" : mode === "speaking" ? "Speaking… you can interrupt any time" : mode === "listening" ? "Listening… talk naturally" : "";
-
-  if (!mode)
-    return (
-      <section className="card assistant-card" aria-labelledby="assist-h">
-        <button className="wide assistant-start" onClick={() => void start()}>
-          <Icon name="mic" size={26} />
-          <span id="assist-h">Talk to Pay Alone</span>
-        </button>
-        <p className="muted">Ask what is left of your limit, who you paid, your pay code, or how anything works. It cannot move money.</p>
-        {note && <p role="status">{note}</p>}
-      </section>
-    );
-
+/** The conversation screen when no payment is waiting: the orb, what was said, and an end button. */
+function LiveOverlay({ live }: { live: Live }) {
+  const label =
+    live.mode === "connecting" ? "Connecting…" : live.mode === "speaking" ? "Speaking… you can interrupt any time" : live.mode === "listening" ? "Listening… talk naturally" : "";
   return (
     <div className="takeover" role="dialog" aria-modal="true" aria-label="Talking to Pay Alone">
       <div className="approve armed assistant-live">
-        <VoiceOrb session={session} mode={mode} />
+        {live.mode && <VoiceOrb session={live.session} mode={live.mode} />}
         <span className="who">Pay Alone</span>
         <span className="how" role="status">
           <Icon name="mic" size={26} />
           {label}
         </span>
       </div>
-      {lines.length > 0 && (
+      {live.lines.length > 0 && (
         <ol className="talk" aria-label="Conversation">
-          {lines.slice(-6).map((t, i) => (
+          {live.lines.slice(-6).map((t, i) => (
             <li key={i} className={t.who}>
               <span className="sr-only">{t.who === "you" ? "You said: " : "Pay Alone said: "}</span>
               {t.text}
@@ -860,7 +919,7 @@ function Assistant({ lang, say }: { lang: Lang; say: (t: string) => void }) {
           ))}
         </ol>
       )}
-      <button className="refuse" onClick={() => void session.current?.end()}>
+      <button className="refuse" onClick={live.end}>
         End conversation
       </button>
     </div>
@@ -880,8 +939,9 @@ function Home(props: {
   say: (t: string) => void;
   refresh: () => void;
   setNotice: (n: { text: string; good: boolean; walletSaid?: string } | null) => void;
+  live: Live;
 }) {
-  const { customer, notice, say } = props;
+  const { customer, notice, say, live } = props;
   const cap = customer.cap;
   const digits = customer.payCode.split("").join(" ");
 
@@ -907,7 +967,8 @@ function Home(props: {
         )}
         {props.loadError && <p role="alert">Cannot check for new requests: {props.loadError.message} Still trying.</p>}
 
-        <Assistant lang={props.prefs.lang} say={say} />
+        <TalkCard live={live} say={say} />
+        {live.mode && <LiveOverlay live={live} />}
 
         <section className="card" aria-labelledby="code-h">
           <div className="paycode">
