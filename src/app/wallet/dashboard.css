@@ -238,3 +238,24 @@
   .takeover .approve.pay-sheet .money.lg { font-size: 2.3rem; }
 }
 .takeover .approve:focus-visible { outline: 3px solid rgba(15, 59, 48, 0.22); outline-offset: -8px; }
+
+/* ---------- pay code sheet ---------- */
+.qr-chip { display: inline-flex; align-items: center; gap: 0.35rem; margin: 0 0.6rem 0 auto; min-height: 0; padding: 0.35rem 0.7rem; border-radius: 999px; border: 0; background: var(--deep); color: var(--lime); font-size: 0.85rem; font-weight: 600; }
+.dash .stack-row.strong { align-items: center; }
+.dash button.safe-btn { margin: 0; min-height: 0; font: inherit; text-align: left; color: var(--ink); cursor: pointer; justify-content: flex-start; }
+.dash button.safe-btn:hover { filter: none; background: #fff; }
+.sheet-back { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 1rem; background: rgba(8, 40, 32, 0.45); backdrop-filter: blur(6px); }
+.sheet { width: min(62rem, 100%); max-height: calc(100vh - 2rem); overflow-y: auto; background: #f6faf3; border-radius: 2rem; padding: 1.4rem; box-shadow: 0 30px 80px rgba(8, 40, 32, 0.35); }
+.sheet-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.8rem; }
+.sheet-head h2 { margin: 0; font-size: 1.6rem; font-weight: 500; }
+.sheet-head .round { margin: 0; padding: 0; min-height: 0; border: 0; }
+.sheet-grid { display: grid; gap: 1.2rem; }
+@media (min-width: 900px) { .sheet-grid { grid-template-columns: 1fr 1fr; } }
+.sheet-qr { display: grid; justify-items: center; gap: 0.5rem; background: var(--deep, #0f3b30); color: #fff; border-radius: 1.6rem; padding: 1.3rem; text-align: center; }
+.sheet-qr img { width: min(100%, 17rem); aspect-ratio: 1; background: #fff; border-radius: 1.2rem; padding: 0.6rem; }
+.sheet-qr .muted { color: rgba(255, 255, 255, 0.75); }
+.sheet-code { font-size: 2.6rem; font-weight: 600; letter-spacing: 0.12em; color: #c3e88f; margin: 0.2rem 0; }
+.sheet-qr button.secondary { background: transparent; color: #fff; border-color: rgba(255, 255, 255, 0.35); box-shadow: none; }
+.sheet-steps h3 { margin: 0.4rem 0 0.2rem; font-size: 1.1rem; font-weight: 600; }
+.sheet-steps ol { margin: 0.4rem 0 0; padding-left: 1.3rem; display: grid; gap: 0.45rem; }
+.sheet-steps ol button { margin: 0; }

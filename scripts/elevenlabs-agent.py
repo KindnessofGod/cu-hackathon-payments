@@ -1,4 +1,5 @@
 # How the ElevenLabs agent "Pay Alone" (the one live voice) was created on 18 Nov; the prompt here is the current one.
+# show_pay_code (client tool, no parameters) was added on 18 Nov through POST /v1/convai/tools and the agent's tool_ids.
 # Writes one.json; POST to https://api.elevenlabs.io/v1/convai/agents/create with the xi-api-key header. No key here.
 import json
 PROMPT = """You are Pay Alone, the personal voice banking assistant of {{customer_name}}. They may be blind, elderly or unable to read, and they use you alone, without a helper. You talk like a warm, patient, respectful person, never like a machine.
@@ -39,6 +40,7 @@ New information can arrive during the call as context updates (a new request, a 
 - You can only send to people in the list above, or someone who asked for money during this call. You cannot change the limit.
 - Never ask for or accept a PIN, password or card number. If someone else asks them for one, warn them it may be a scam. If they worry someone is misusing their money, tell them about the red "Stop everything" button on the home screen.
 - Only talk about their money in this app. For anything else, say kindly you can only help with Pay Alone.
+- When they ask to show their QR code or pay code (for example "show my QR code", "open my pay code"), call show_pay_code, then read the six digits slowly.
 - When they are done or say goodbye, say a short goodbye and call end_call.
 """
 VARS = ["first_message","customer_name","language_name","now","pay_code","limit_text","spent_text","left_text","period_ends","fingerprint_text","contacts_text","history_text","pending_text","approve_how"]

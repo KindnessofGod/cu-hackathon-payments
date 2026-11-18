@@ -390,6 +390,11 @@ export default function WalletPage() {
             }
           },
           tools: {
+            show_pay_code: async () => {
+              window.dispatchEvent(new Event("payalone:show-code"));
+              const code = (await refresh())?.customer?.payCode ?? "";
+              return code ? `shown: the QR code and the pay code ${code.split("").join(" ")} are now large on the screen.` : "could not show the pay code.";
+            },
             approve_payment: () => liveHandlers.current.approve?.() ?? Promise.resolve(nothingWaiting()),
             refuse_payment: () => liveHandlers.current.refuse?.() ?? Promise.resolve("nothing to refuse: no payment is waiting right now."),
             send_money: async (p) => {
@@ -1492,6 +1497,12 @@ function Home(props: {
     if (d) d.open = true;
   };
   const today = new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" });
+  const [showCode, setShowCode] = useState(false);
+  useEffect(() => {
+    const open = () => setShowCode(true);
+    window.addEventListener("payalone:show-code", open);
+    return () => window.removeEventListener("payalone:show-code", open);
+  }, []);
 
   return (
     <div className="dash">
@@ -1508,9 +1519,9 @@ function Home(props: {
         <a href="#payments" className="rail-btn" aria-label="Your payments">
           <Icon name="list" />
         </a>
-        <a href="#code" className="rail-btn" aria-label="Your pay code">
+        <button className="rail-btn" aria-label="Show my pay code and QR code" onClick={() => setShowCode(true)}>
           <Icon name="qr" />
-        </a>
+        </button>
         <a href="#safety" className="rail-btn" aria-label="Limit and fingerprint">
           <Icon name="shield" />
         </a>
@@ -1562,6 +1573,9 @@ function Home(props: {
               </div>
               <div className="stack-row strong">
                 <span>Pay code&nbsp;&nbsp;{customer.payCode.replace(/(\d{3})(\d{3})/, "$1 $2")}</span>
+                <button className="qr-chip" onClick={() => setShowCode(true)} aria-label="Show my QR code">
+                  <Icon name="qr" size={18} /> QR
+                </button>
                 <span className="cur-mark">{customer.assetCode}</span>
               </div>
             </div>
@@ -1690,15 +1704,15 @@ function Home(props: {
               <span>{active ? `${formatAmount(active.limit)} a ${active.every}; it refuses more` : "Set one below"}</span>
             </span>
           </div>
-          <div className="safe">
+          <button className="safe safe-btn" onClick={() => setShowCode(true)}>
             <span className="safe-ic">
               <Icon name="qr" />
             </span>
             <span>
-              <b>Pay code {customer.payCode.replace(/(\d{3})(\d{3})/, "$1 $2")}</b>
-              <span>It cannot take money</span>
+              <b>Show my QR code</b>
+              <span>Pay code {customer.payCode.replace(/(\d{3})(\d{3})/, "$1 $2")} · set it as lock screen</span>
             </span>
-          </div>
+          </button>
         </section>
 
         <section className="card" aria-labelledby="code-h" id="code">
@@ -1818,6 +1832,7 @@ function Home(props: {
       </main>
 
       <VoicePanel live={live} onTalk={() => void talk()} name={name} />
+      {showCode && <PayCodeSheet payCode={customer.payCode} say={say} onClose={() => setShowCode(false)} />}
       {live.mode && <LiveOverlay live={live} />}
     </div>
   );
@@ -1964,6 +1979,70 @@ function Meter({ spent, limit }: { spent: Amount; limit: Amount }) {
 }
 
 /** Makes a picture with the pay code low on the screen, to set as the lock-screen wallpaper. */
+/** The pay code as a large QR, and setting it as the lock screen (once, with an Apple Shortcut). */
+function PayCodeSheet({ payCode, say, onClose }: { payCode: string; say: (t: string) => void; onClose: () => void }) {
+  const digits = payCode.split("").join(" ");
+  const [link, setLink] = useState("");
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    void api<{ url: string }>("/api/wallet/lockscreen").then((r) => setLink(r.url)).catch(() => undefined);
+  }, []);
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopied(true);
+      say("The picture link is copied. Now open the Shortcuts app.");
+    } catch {
+      setCopied(false);
+    }
+  }
+  return (
+    <div className="sheet-back" role="dialog" aria-modal="true" aria-labelledby="sheet-h" onClick={onClose}>
+      <div className="sheet" onClick={(e) => e.stopPropagation()}>
+        <div className="sheet-head">
+          <h2 id="sheet-h">Your pay code</h2>
+          <button className="round" onClick={onClose} aria-label="Close">
+            <Icon name="cross" size={20} />
+          </button>
+        </div>
+        <div className="sheet-grid">
+          <div className="sheet-qr">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/api/wallet/paycode" alt={`QR code for pay code ${digits}`} />
+            <p className="sheet-code" aria-label={`Pay code ${digits}`}>
+              {payCode.replace(/(\d{3})(\d{3})/, "$1 $2")}
+            </p>
+            <p className="muted">A seller scans this or types the six digits to ask you for money. It cannot take money; only your fingerprint can.</p>
+            <button className="wide secondary" onClick={() => say(`Your pay code is ${digits}. Again: ${digits}.`)}>
+              <Icon name="speaker" size={20} /> Say it aloud
+            </button>
+          </div>
+          <div className="sheet-steps">
+            <h3>Put it on your lock screen</h3>
+            <p className="muted">Then a seller can scan it without you unlocking anything.</p>
+            <a className="button wide" href={link || "#"} target="_blank" rel="noreferrer" aria-disabled={!link}>
+              Open the lock-screen picture
+            </a>
+            <p className="muted">Touch and hold the picture, choose Save to Photos, then in Photos choose Use as Wallpaper.</p>
+            <h3>Or set it automatically (once)</h3>
+            <ol>
+              <li>
+                <button className="secondary" onClick={() => void copy()} disabled={!link}>
+                  {copied ? "Link copied" : "Copy my picture link"}
+                </button>
+              </li>
+              <li>Open the Shortcuts app and tap +.</li>
+              <li>Add the action “Get Contents of URL” and paste the link.</li>
+              <li>Add the action “Set Wallpaper”, choose Lock Screen, and turn off Show Preview.</li>
+              <li>Name it “Pay code wallpaper” and tap Run. Later just say “Hey Siri, pay code wallpaper”.</li>
+            </ol>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function LockScreenPicture({ payCode }: { payCode: string }) {
   const [problem, setProblem] = useState("");
 
