@@ -149,4 +149,4 @@ Commit hash: (record at submission time)
 `docs/BUILD_PROMPT.md` (the build task), `docs/hackathon-participant-guide.md` (rules), `docs/open-payments-technical-findings.md`, `docs/solution-direction-no-helper-wallet.md`, `docs/VOICE_PLAN.md`, `docs/OPEN_ITEMS.md`, `docs/PITCH_EVIDENCE.md`, `DISCLOSURES.md`, `BUILD_LOG.md`, `CLAUDE.md`.
 
 ## AI assistance
-this project was built with AI assistance. Claude (Anthropic) helped with the research (problem evidence, Open Payments and ATM accessibility research) and wrote much of the code (Claude Code), under the team's direction; the team reviewed, ran and tested it. Details, prior work and all third-party services and libraries: [`DISCLOSURES.md`](DISCLOSURES.md).
+This project was built with AI assistance. Claude (Anthropic) helped with the research (problem evidence, Open Payments and ATM accessibility research) and wrote much of the code (Claude Code), under the team's direction; the team reviewed, ran and tested it. Details, prior work and all third-party services and libraries: [`DISCLOSURES.md`](DISCLOSURES.md).
