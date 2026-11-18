@@ -203,32 +203,48 @@ export async function createRequest(payCode: string, amountMajor: string): Promi
   return request;
 }
 
-/** A saved person whose name matches what the customer said. Ignores case, spaces and punctuation. */
-export function findContact(customer: Customer, said: string): Contact | null {
+/** Someone the customer can send money to: a saved person, or someone who asked them for money in the last day. */
+export type Payee = { walletId: string; name: string; why: "paid before" | "asked recently" };
+
+const RECENT_ASK_MS = 24 * 60 * 60 * 1000;
+
+export async function payeesOf(customer: Customer): Promise<Payee[]> {
+  const out: Payee[] = Object.values(customer.contacts).map((c) => ({ walletId: c.walletId, name: c.name, why: "paid before" as const }));
+  const since = Date.now() - RECENT_ASK_MS;
+  const asked = (await store().list<PaymentRequest>("requests"))
+    .filter((r) => r.customerId === customer.id && !r.outgoing && Date.parse(r.createdAt) >= since)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  for (const r of asked) {
+    if (!out.some((p) => p.walletId === r.merchantWalletId)) out.push({ walletId: r.merchantWalletId, name: r.merchantName, why: "asked recently" });
+  }
+  return out;
+}
+
+/** The payee whose name matches what the customer said. Ignores case, spaces and punctuation. */
+export function findPayee(payees: Payee[], said: string): Payee | null {
   const norm = (x: string) => x.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
   const want = norm(said);
   if (!want) return null;
-  const all = Object.values(customer.contacts);
-  return (
-    all.find((c) => norm(c.name) === want) ??
-    all.find((c) => norm(c.name).includes(want) || want.includes(norm(c.name))) ??
-    null
-  );
+  return payees.find((p) => norm(p.name) === want) ?? payees.find((p) => norm(p.name).includes(want) || want.includes(norm(p.name))) ?? null;
 }
 
 /**
- * The customer sends money to someone they have paid before (asked for by voice). It becomes an open
+ * The customer sends money to someone they have paid before, or who asked them for money in the last
+ * day (for example after refusing by mistake). Asked for by voice. It becomes an open
  * request like a seller's: the wallet quotes it, and it is approved the same way, with the fingerprint.
  * The incoming payment is created on the receiver's wallet with a non-interactive grant, as Open
  * Payments allows for any client.
  */
 export async function sendToContact(customer: Customer, to: string, amountMajor: string): Promise<PaymentRequest> {
-  const contact = findContact(customer, to);
+  const payees = await payeesOf(customer);
+  const contact = findPayee(payees, to);
   if (!contact) {
-    const names = Object.values(customer.contacts).map((c) => c.name);
+    const names = payees.map((c) => c.name);
     throw new DomainError(
       "not_found",
-      names.length ? `There is nobody called ${to} among the people you have paid. You have paid: ${names.join(", ")}.` : "You have not paid anybody through this app yet, so there is nobody to send to.",
+      names.length
+        ? `There is nobody called ${to} among the people you can send to. You can send to: ${names.join(", ")}.`
+        : "You have not paid anybody, and nobody has asked you for money, so there is nobody to send to yet.",
     );
   }
   if (await pendingRequest(customer)) throw new DomainError("wrong_state", "Another payment is waiting. Answer that one first.");

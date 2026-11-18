@@ -1,4 +1,4 @@
-import { capSummary, customerHistory, getRequestFor, isOpen } from "@/lib/domain";
+import { capSummary, customerHistory, getRequestFor, isOpen, payeesOf } from "@/lib/domain";
 import { fail, requireCustomer } from "@/lib/http";
 import { exceedsCap, remainingOfCap, speakAmount } from "@/lib/money";
 import { askingSentence, isLang, type Lang } from "@/lib/voice/sentences";
@@ -55,10 +55,10 @@ export async function GET(req: Request) {
       const what = h.status === "paid" && h.debitAmount ? `, ${speakAmount(h.debitAmount)} left the account` : h.failure?.message ? ` (${h.failure.message})` : "";
       return `- ${when(h.at)}: ${h.merchantName}, ${speakAmount(h.requested)}; ${STATUS[h.status] ?? h.status}${what}.`;
     });
-    const contacts = Object.values(customer.contacts)
-      .sort((a, b) => b.lastPaidAt.localeCompare(a.lastPaidAt))
-      .slice(0, 15)
-      .map((c) => `${c.name} (paid ${c.paidCount} time${c.paidCount === 1 ? "" : "s"}, last on ${when(c.lastPaidAt)})`);
+    const contacts = (await payeesOf(customer)).slice(0, 15).map((p) => {
+      const c = customer.contacts[p.walletId];
+      return c ? `${p.name} (paid ${c.paidCount} time${c.paidCount === 1 ? "" : "s"}, last on ${when(c.lastPaidAt)})` : `${p.name} (never paid; asked for money in the last day)`;
+    });
     const hasDevice = Boolean(customer.deviceKeys?.length);
     const hasPasskey = Boolean(customer.passkeys?.length);
     const approveHow =
