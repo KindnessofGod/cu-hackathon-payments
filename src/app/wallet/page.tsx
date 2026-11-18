@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AppBar, Avatar, Icon } from "@/components/ui";
+import { AppBar, Icon } from "@/components/ui";
 import { api, errorText, type ApiError } from "@/lib/client";
 import { formatAmount, speakAmount, type Amount } from "@/lib/money";
 import { BrowserSpeechOutput, HostedSpeechOutput } from "@/lib/speech";
@@ -9,7 +9,12 @@ import { startAuthentication, startRegistration } from "@simplewebauthn/browser"
 import { inNativeApp, nativeCreateKey, nativeSign } from "@/lib/native";
 import { canListen, recordAnswer } from "@/lib/listen";
 import type { Intent } from "@/lib/voice/intent";
-import { startLive, type LiveMode, type LiveSession } from "@/lib/liveVoice";
+import { nudgeAudio, report, startLive, type LiveMode, type LiveSession } from "@/lib/liveVoice";
+import { GlassOrb } from "@/components/GlassOrb";
+import { canWake, startWake } from "@/lib/wake";
+import { createAvatar } from "@dicebear/core";
+import * as openPeeps from "@dicebear/open-peeps";
+import "./dashboard.css";
 
 const HELP_TEXT = "You can ask: who is this, how much is left, or say again. To pay, say pay. To refuse, say no.";
 
@@ -23,6 +28,95 @@ function replyText(kind: "who" | "left", r: RequestView, cap: CapView | null): s
   return after < BigInt(0)
     ? `${left} This payment is more than what is left, so your wallet will refuse it.`
     : `${left} If you pay, ${formatAmount({ ...cap.left, value: after.toString() })} will be left.`;
+}
+
+const SYMBOL: Record<string, string> = { USD: "$", NGN: "₦", EUR: "€", GBP: "£", ZAR: "R", KES: "KSh" };
+const symbolOf = (code: string) => SYMBOL[code] ?? code;
+const titleCase = (n: string) => n.replace(/\b\p{L}/gu, (c) => c.toUpperCase());
+
+/** An amount with a small raised currency sign. Screen readers hear it spoken in full. */
+function Money({ a, size = "md" }: { a: Amount; size?: "sm" | "md" | "lg" | "xl" }) {
+  const num = formatAmount(a).slice(a.assetCode.length + 1);
+  return (
+    <span className={`money ${size}`}>
+      <span className="sr-only">{speakAmount(a)}</span>
+      <span aria-hidden="true">
+        <sup>{symbolOf(a.assetCode)}</sup>
+        {num}
+      </span>
+    </span>
+  );
+}
+
+/** Hand-drawn person (Open Peeps). The look is picked from the name, so it stays the same each time. */
+const LOOKS = [
+  { head: "bantuKnots", face: "smileBig", skin: "ae5d29", bg: "c3e88f" },
+  { head: "short2", face: "calm", skin: "694d3d", bg: "bfe6f5", beard: true },
+  { head: "twists", face: "lovingGrin1", skin: "d08b5b", bg: "f3dfe9" },
+  { head: "afro", face: "smile", skin: "694d3d", bg: "e4e1fb" },
+  { head: "hijab", face: "cute", skin: "ae5d29", bg: "fde7c8" },
+  { head: "dreads1", face: "smileTeethGap", skin: "d08b5b", bg: "d7f0e6" },
+];
+const SELF_LOOK = { head: "grayBun", face: "smile", skin: "694d3d", bg: "ffffff" };
+function lookFor(name: string) {
+  let h = 0;
+  for (const c of name.toLowerCase()) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return LOOKS[h % LOOKS.length]!;
+}
+function Peep({ name, size = 44, bg, self = false }: { name: string; size?: number; bg?: string; self?: boolean }) {
+  const src = useMemo(() => {
+    const l = self ? SELF_LOOK : lookFor(name);
+    return createAvatar(openPeeps, {
+      seed: name,
+      backgroundColor: [bg ?? l.bg],
+      radius: 50,
+      scale: 110,
+      head: [l.head],
+      face: [l.face],
+      skinColor: [l.skin],
+      accessoriesProbability: 0,
+      maskProbability: 0,
+      facialHairProbability: "beard" in l && l.beard ? 100 : 0,
+    } as Parameters<typeof createAvatar>[1]).toDataUri();
+  }, [name, bg, self]);
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img src={src} alt="" width={size} height={size} className="peep" />;
+}
+
+/** This week's payments by day (Monday first), from our own records. Heights only; money stays in minor units. */
+function weekSummary(items: HistoryItem[]) {
+  const now = new Date();
+  const monday = new Date(now);
+  monday.setHours(0, 0, 0, 0);
+  monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+  const labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  const values = labels.map(() => BigInt(0));
+  let paid = 0;
+  let refused = 0;
+  for (const h of items) {
+    const at = new Date(h.at);
+    if (at < monday) continue;
+    if (h.status === "paid") {
+      paid++;
+      values[(at.getDay() + 6) % 7] += BigInt((h.debitAmount ?? h.requested).value);
+    } else if (h.status === "declined" || h.status === "expired" || h.status === "failed") refused++;
+  }
+  const total = values.reduce((a, b) => a + b, BigInt(0));
+  const max = Math.max(1, ...values.map(Number));
+  const todayIdx = (now.getDay() + 6) % 7;
+  return { days: labels.map((label, i) => ({ label, value: Number(values[i]), today: i === todayIdx })), max, paid, refused, total: total.toString() };
+}
+
+/** People in this customer's history: paid ones first, by how often. */
+function peopleOf(items: HistoryItem[]) {
+  const m = new Map<string, { name: string; paid: number; last: string }>();
+  for (const h of items) {
+    const p = m.get(h.merchantName) ?? { name: h.merchantName, paid: 0, last: h.at };
+    if (h.status === "paid") p.paid++;
+    if (h.at > p.last) p.last = h.at;
+    m.set(h.merchantName, p);
+  }
+  return [...m.values()].sort((a, b) => b.paid - a.paid || b.last.localeCompare(a.last));
 }
 
 interface CapView {
@@ -89,6 +183,8 @@ interface State {
 /** The one live voice conversation (ElevenLabs agent), shared by the home screen and the payment screen. */
 interface Live {
   mode: LiveMode | "";
+  /** The mode right now (for code that runs later than the render it was made in). */
+  modeNow: () => LiveMode | "";
   lines: { who: "app" | "you"; text: string }[];
   session: React.RefObject<LiveSession | null>;
   active: React.RefObject<boolean>;
@@ -96,6 +192,8 @@ interface Live {
   handlers: React.RefObject<{ approve?: () => Promise<string>; refuse?: () => Promise<string>; ended?: () => void }>;
   start: (requestId?: string) => Promise<boolean>;
   end: () => void;
+  /** Between conversations: free listening for a greeting ("hello", "Pay Alone"), which starts a new one. */
+  standby: boolean;
   /** After a payment: what is left of the limit, from fresh records, as a sentence for the agent. */
   leftNow: () => Promise<string>;
 }
@@ -112,6 +210,8 @@ interface VoicePrefs {
   natural: boolean;
   /** After reading a request, listen for a spoken "pay" or "no". "pay" only opens the fingerprint prompt. */
   listen: boolean;
+  /** Start the live conversation as soon as the wallet opens, with no tap. */
+  auto: boolean;
   lang: Lang;
 }
 
@@ -122,10 +222,11 @@ function readPrefs(): VoicePrefs {
       on: window.localStorage.getItem("appVoice") !== "off",
       natural: window.localStorage.getItem("naturalVoice") !== "off",
       listen: window.localStorage.getItem("voiceAnswer") !== "off",
+      auto: window.localStorage.getItem("autoTalk") !== "off",
       lang: l && l in LANG_NAMES ? l : "en",
     };
   } catch {
-    return { on: true, natural: true, listen: true, lang: "en" };
+    return { on: true, natural: true, listen: true, auto: true, lang: "en" };
   }
 }
 
@@ -162,11 +263,17 @@ export default function WalletPage() {
   const [state, setState] = useState<State | null>(null);
   const [loadError, setLoadError] = useState<ApiError | null>(null);
   const [notice, setNotice] = useState<{ text: string; good: boolean; walletSaid?: string } | null>(null);
-  const [prefs, setPrefs] = useState<VoicePrefs>({ on: true, natural: true, listen: true, lang: "en" });
+  const [prefs, setPrefs] = useState<VoicePrefs>({ on: true, natural: true, listen: true, auto: true, lang: "en" });
   const appVoice = prefs.on;
   const spokenFor = useRef<string>("");
   // The one live voice conversation.
-  const [liveMode, setLiveMode] = useState<LiveMode | "">("");
+  const [liveMode, setLiveModeState] = useState<LiveMode | "">("");
+  const liveModeRef = useRef<LiveMode | "">("");
+  const setLiveMode = useCallback((m: LiveMode | "") => {
+    liveModeRef.current = m;
+    setLiveModeState(m);
+  }, []);
+  const [standby, setStandby] = useState(false);
   const [liveLines, setLiveLines] = useState<{ who: "app" | "you"; text: string }[]>([]);
   const liveSession = useRef<LiveSession | null>(null);
   const liveActive = useRef(false);
@@ -203,8 +310,10 @@ export default function WalletPage() {
     }
   }, []);
 
+  const [prefsLoaded, setPrefsLoaded] = useState(false);
   useEffect(() => {
     setPrefs(readPrefs());
+    setPrefsLoaded(true);
     const q = new URLSearchParams(window.location.search);
     const outcome = q.get("outcome");
     if (outcome) {
@@ -221,6 +330,17 @@ export default function WalletPage() {
       window.history.replaceState(null, "", "/wallet");
     }
     void refresh();
+  }, [refresh]);
+
+  // Lock-screen alerts: the service worker shows them; when one is opened, check for the request at once.
+  useEffect(() => {
+    if (!("serviceWorker" in navigator)) return;
+    navigator.serviceWorker.register("/sw.js").catch(() => undefined);
+    const onMsg = (e: MessageEvent) => {
+      if (e.data?.type === "check-requests") void refresh();
+    };
+    navigator.serviceWorker.addEventListener("message", onMsg);
+    return () => navigator.serviceWorker.removeEventListener("message", onMsg);
   }, [refresh]);
 
   // Poll for new requests. The Open Payments API has no push to clients, so the app asks.
@@ -247,19 +367,34 @@ export default function WalletPage() {
       liveActive.current = true;
       liveFor.current = requestId ?? "";
       setLiveLines([]);
+      const startedAt = Date.now();
+      let heardLines = 0;
       try {
         liveSession.current = await startLive({
           startUrl: `/api/voice/agent?native=${inNativeApp() ? "1" : "0"}${requestId ? `&id=${encodeURIComponent(requestId)}` : ""}`,
           lang: prefs.lang,
           onMode: setLiveMode,
-          onLine: (who, text) => setLiveLines((l) => [...l, { who, text }]),
+          onLine: (who, text) => {
+            heardLines++;
+            setLiveLines((l) => [...l, { who, text }]);
+          },
           onEnd: () => {
             liveActive.current = false;
             liveSession.current = null;
             setLiveMode("");
             liveHandlers.current.ended?.();
+            // Ended at once without a word: the voice service refused (for example, out of minutes). Say so aloud.
+            if (Date.now() - startedAt < 6000 && heardLines === 0) {
+              report("live voice ended at once", "no lines");
+              void voice.speak("Sorry, the Pay Alone voice is not available right now. You can still pay by tapping the screen.");
+            }
           },
           tools: {
+            show_pay_code: async () => {
+              window.dispatchEvent(new Event("payalone:show-code"));
+              const code = (await refresh())?.customer?.payCode ?? "";
+              return code ? `shown: the QR code and the pay code ${code.split("").join(" ")} are now large on the screen.` : "could not show the pay code.";
+            },
             approve_payment: () => liveHandlers.current.approve?.() ?? Promise.resolve(nothingWaiting()),
             refuse_payment: () => liveHandlers.current.refuse?.() ?? Promise.resolve("nothing to refuse: no payment is waiting right now."),
             send_money: async (p) => {
@@ -295,17 +430,19 @@ export default function WalletPage() {
         return false;
       }
     },
-    [prefs.lang, refresh],
+    [prefs.lang, refresh, setLiveMode],
   );
 
   const live: Live = {
     mode: liveMode,
+    modeNow: () => liveModeRef.current,
     lines: liveLines,
     session: liveSession,
     active: liveActive,
     handlers: liveHandlers,
     start: startLiveVoice,
     end: () => void liveSession.current?.end(),
+    standby,
     leftNow: async () => {
       const st = await refresh();
       const c = st?.customer?.cap;
@@ -313,16 +450,88 @@ export default function WalletPage() {
     },
   };
 
+  // Open the app, and Pay Alone starts talking: no tap needed. About the waiting request if there is one.
+  // Each opening counts once; leaving the app ends the call (it would keep using voice minutes).
+  const [needTap, setNeedTap] = useState(false);
+  const autoDone = useRef(false);
+  const autoOk = Boolean(prefsLoaded && prefs.on && prefs.natural && prefs.auto && state?.customer);
+  const autoPending = state?.pending ?? null;
+  const autoWaitQuote = Boolean(autoPending && !autoPending.debitAmount);
+  useEffect(() => {
+    if (!autoOk || autoDone.current || liveActive.current || autoWaitQuote) return;
+    autoDone.current = true;
+    if (autoPending) spokenFor.current = autoPending.id; // the agent reads it; do not also play the recorded sentence
+    void startLiveVoice(autoPending?.id).then((ok) => setNeedTap(!ok));
+  }, [autoOk, autoWaitQuote, autoPending, startLiveVoice]);
+  useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState === "hidden") {
+        liveSession.current?.end();
+        autoDone.current = false; // next time the app is opened, talk again
+      } else void refresh();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, [refresh]);
+  // Safari may hold back the voice of a call the app started by itself: any tap lets it play.
+  useEffect(() => {
+    const onTap = () => {
+      if (liveActive.current) nudgeAudio();
+    };
+    document.addEventListener("pointerdown", onTap);
+    return () => document.removeEventListener("pointerdown", onTap);
+  }, []);
+
+  // A conversation nobody is talking in ends by itself after 40 seconds, to save voice minutes.
+  const lastLineAt = useRef(0);
+  useEffect(() => {
+    lastLineAt.current = Date.now();
+  }, [liveLines.length, liveMode]);
+  useEffect(() => {
+    const t = setInterval(() => {
+      if (liveActive.current && liveModeRef.current === "listening" && Date.now() - lastLineAt.current > 40000) liveSession.current?.end();
+    }, 5000);
+    return () => clearInterval(t);
+  }, []);
+
+  // Between conversations, keep listening for free for a greeting, then start talking again: a blind
+  // customer should never have to find a button to restart the voice.
+  const wakeOk = Boolean(autoOk && !liveMode && !needTap && canWake());
+  useEffect(() => {
+    if (!wakeOk) {
+      setStandby(false);
+      return;
+    }
+    const pendingId = state?.pending?.debitAmount ? state.pending.id : undefined;
+    const stop = startWake(
+      () => {
+        setStandby(false);
+        void startLiveVoice(pendingId);
+      },
+      (why) => {
+        report("standby listening blocked:", why);
+        setStandby(false);
+      },
+    );
+    setStandby(Boolean(stop));
+    return () => stop?.();
+  }, [wakeOk, state?.pending?.id, state?.pending?.debitAmount, startLiveVoice]);
+
   // Speak a new request once when it arrives with its exact amount.
   const pending = state?.pending ?? null;
   useEffect(() => {
     if (pending && pending.debitAmount && spokenFor.current !== pending.id) {
       spokenFor.current = pending.id;
       if (pending.id === sentByVoice.current) return; // the customer asked for it by voice; the agent is already talking about it
+      if (liveActive.current && liveFor.current === pending.id) return; // the agent is already talking about it
       if (liveActive.current && liveFor.current !== pending.id) {
         // A seller asked during a conversation: start again about this request, so the agent has its facts.
         liveSession.current?.end();
         setTimeout(() => void startLiveVoice(pending.id), 800);
+        return;
+      }
+      if (prefs.on && prefs.natural && prefs.auto && !liveActive.current) {
+        void startLiveVoice(pending.id);
         return;
       }
       if (inNativeApp() && prefs.on && prefs.listen && canListen()) return; // the approval screen asks by voice itself
@@ -386,6 +595,23 @@ export default function WalletPage() {
       />
     );
 
+  if (needTap && !liveMode)
+    return (
+      <button
+        className="tap-to-talk"
+        onClick={() => {
+          setNeedTap(false);
+          void startLiveVoice().then((ok) => setNeedTap(!ok));
+        }}
+      >
+        <span className="tap-ring" aria-hidden="true">
+          <Icon name="mic" size={44} />
+        </span>
+        <span className="tap-title">Tap anywhere to talk to Pay Alone</span>
+        <span className="tap-sub">The voice could not start by itself on this device.</span>
+      </button>
+    );
+
   return (
     <Home
       customer={state.customer}
@@ -398,6 +624,7 @@ export default function WalletPage() {
         savePref("appVoice", next.on ? "on" : "off");
         savePref("naturalVoice", next.natural ? "on" : "off");
         savePref("voiceAnswer", next.listen ? "on" : "off");
+        savePref("autoTalk", next.auto ? "on" : "off");
         savePref("lang", next.lang);
         if (!next.on) hosted.stop();
       }}
@@ -435,7 +662,8 @@ function Setup({ suggested, simulated, onDone }: { suggested: string; simulated:
       <AppBar role="Customer" />
       <main>
         <h1>Set up this device</h1>
-        <p className="lead">This is done once. Enter the wallet address you pay from.</p>
+        <LinkForm onDone={onDone} />
+        <p className="lead">New to Pay Alone? This is done once. Enter the wallet address you pay from.</p>
         <form onSubmit={submit} className="card" style={{ maxWidth: "40rem" }}>
           <label htmlFor="wa">Your wallet address</label>
           <input
@@ -465,6 +693,228 @@ function Setup({ suggested, simulated, onDone }: { suggested: string; simulated:
         </form>
       </main>
     </>
+  );
+}
+
+function isHomeScreenApp(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    (window.matchMedia?.("(display-mode: standalone)").matches || (navigator as Navigator & { standalone?: boolean }).standalone === true)
+  );
+}
+
+/** The Home Screen app has its own sign-in, separate from Safari. A one-time code links it to the same customer. */
+function LinkForm({ onDone }: { onDone: () => void }) {
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await api("/api/wallet/link", { method: "PUT", body: { code } });
+      onDone();
+    } catch (err) {
+      setError(errorText(err).message);
+      setBusy(false);
+    }
+  }
+  return (
+    <form onSubmit={submit} className="card" style={{ maxWidth: "40rem" }}>
+      <h2>Already use Pay Alone in Safari?</h2>
+      <p className="muted">
+        In Safari, open Pay Alone, then &quot;Lock-screen alerts&quot;, then &quot;Get a link code&quot;. Enter the six digits here. You keep your limit, fingerprint
+        and history.
+      </p>
+      <label htmlFor="link">Link code</label>
+      <input id="link" inputMode="numeric" autoComplete="one-time-code" maxLength={8} value={code} onChange={(e) => setCode(e.target.value)} />
+      {error && (
+        <p className="status bad" role="alert">
+          {error}
+        </p>
+      )}
+      <button className="wide" disabled={busy || code.replace(/\D/g, "").length !== 6}>
+        {busy ? "Linking…" : "Link this app"}
+      </button>
+    </form>
+  );
+}
+
+function b64urlToBytes(s: string): Uint8Array<ArrayBuffer> {
+  const b = atob(s.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (s.length % 4)) % 4));
+  const out = new Uint8Array(new ArrayBuffer(b.length));
+  for (let i = 0; i < b.length; i++) out[i] = b.charCodeAt(i);
+  return out;
+}
+
+/** Lock-screen alerts (Web Push). On iPad and iPhone this works only in the Home Screen app. */
+function Alerts({ say }: { say: (t: string) => void }) {
+  const [status, setStatus] = useState<"checking" | "unsupported" | "needs-home-screen" | "off" | "denied" | "on">("checking");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [link, setLink] = useState<string | null>(null);
+
+  useEffect(() => {
+    void (async () => {
+      const supported = "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+      if (!supported) {
+        const apple = /iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent) && "ontouchend" in document;
+        setStatus(apple && !isHomeScreenApp() ? "needs-home-screen" : "unsupported");
+        return;
+      }
+      if (Notification.permission === "denied") return setStatus("denied");
+      const reg = await navigator.serviceWorker.getRegistration("/");
+      const sub = await reg?.pushManager.getSubscription();
+      setStatus(sub && Notification.permission === "granted" ? "on" : "off");
+      let again = false;
+      try {
+        again = sessionStorage.getItem("alertsAfterReload") === "1";
+        sessionStorage.removeItem("alertsAfterReload");
+      } catch {}
+      if (again && !sub) setMessage("Tap Turn on alerts once more to finish.");
+    })().catch(() => setStatus("unsupported"));
+  }, []);
+
+  async function turnOn() {
+    setBusy(true);
+    setMessage(null);
+    let step = "asking permission";
+    const limit = <T,>(p: Promise<T>, secs: number): Promise<T> =>
+      Promise.race([p, new Promise<T>((_, no) => setTimeout(() => no(new Error(`no answer after ${secs} seconds`)), secs * 1000))]);
+    const at = (s: string) => {
+      step = s;
+      setMessage(`Turning on: ${s}…`);
+    };
+    try {
+      // Ask first, straight from the tap: iPadOS only allows the question from a tap.
+      at("asking permission");
+      const permission = await limit(Notification.requestPermission(), 60);
+      if (permission !== "granted") {
+        setStatus(permission === "denied" ? "denied" : "off");
+        setMessage("Alerts were not allowed.");
+        return;
+      }
+      at("getting the server key");
+      const { publicKey } = await limit(api<{ publicKey: string | null }>("/api/wallet/push"), 15);
+      if (!publicKey) throw new Error("Alerts are not set up on the server yet.");
+      at("starting the alert service");
+      const reg = await limit(navigator.serviceWorker.register("/sw.js", { scope: "/" }), 15);
+      if (!reg.active) {
+        const w = reg.installing ?? reg.waiting;
+        await limit(
+          new Promise<void>((done) => {
+            if (!w) return done();
+            w.addEventListener("statechange", () => w.state === "activated" && done());
+          }),
+          15,
+        );
+      }
+      // iPadOS can leave subscribe() waiting forever when this page is not yet controlled by the
+      // service worker (first open of the Home Screen app). Reload once so it is, then finish.
+      if (!navigator.serviceWorker.controller) {
+        report("alerts: page not controlled, reloading", `sw=${reg.active?.state ?? "none"}`);
+        try {
+          sessionStorage.setItem("alertsAfterReload", "1");
+        } catch {}
+        setMessage("Almost done. The app reloads; then tap Turn on alerts once more.");
+        say("Almost done. The app reloads. Then tap Turn on alerts once more.");
+        setTimeout(() => window.location.reload(), 2500);
+        return;
+      }
+      at("getting an alert address from Apple");
+      const old = await reg.pushManager.getSubscription();
+      const sub = old ?? (await limit(reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64urlToBytes(publicKey) }), 30));
+      at("saving");
+      await limit(api("/api/wallet/push", { method: "POST", body: { subscription: sub.toJSON() } }), 15);
+      setStatus("on");
+      const t = "Lock-screen alerts are on. When a seller asks you for money, this iPad will alert you, even when it is locked.";
+      setMessage(t);
+      say(t);
+    } catch (e) {
+      const why = e instanceof Error ? e.message : errorText(e).message;
+      report(
+        `alerts failed at ${step}: ${why} | controlled=${Boolean(navigator.serviceWorker.controller)} permission=${Notification.permission} standalone=${isHomeScreenApp()}`,
+      );
+      setMessage(`Alerts could not be turned on (${step}): ${why}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function test() {
+    setBusy(true);
+    const t = "Test alert in 10 seconds. Lock the iPad now if you want to hear it on the lock screen.";
+    setMessage(t);
+    say(t);
+    try {
+      const r = await api<{ sent: number; failed: number }>("/api/wallet/push", { method: "PUT", body: { delaySeconds: 10 } });
+      setMessage(r.sent ? "Test alert sent." : "The test alert could not be sent. Turn alerts off and on again.");
+    } catch (e) {
+      setMessage(errorText(e).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function getLink() {
+    setBusy(true);
+    try {
+      const r = await api<{ code: string }>("/api/wallet/link", { method: "POST" });
+      setLink(r.code);
+      const d = r.code.split("").join(" ");
+      say(`Your link code is ${d}. Again: ${d}. It works for ten minutes, once.`);
+    } catch (e) {
+      setMessage(errorText(e).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (status === "checking") return null;
+  return (
+    <section aria-labelledby="alerts-h" style={{ marginTop: "1.2rem" }}>
+      <h2 id="alerts-h">Lock-screen alerts (test)</h2>
+      {status === "on" && <p>On. A seller&apos;s request alerts this device even when it is locked. VoiceOver reads the alert; unlock with your fingerprint to answer.</p>}
+      {status === "off" && <p>Hear a seller&apos;s request even when this device is locked. You still unlock with your fingerprint to pay.</p>}
+      {status === "denied" && <p>Alerts are blocked for Pay Alone. Allow them in Settings, then Notifications, then Pay Alone.</p>}
+      {status === "unsupported" && <p className="muted">This browser cannot show lock-screen alerts.</p>}
+      {status === "needs-home-screen" && (
+        <>
+          <p>On iPad, alerts work only when Pay Alone is on the Home Screen.</p>
+          <ol>
+            <li>Tap Share, at the top of Safari, then &quot;Add to Home Screen&quot;, then Add.</li>
+            <li>Tap &quot;Get a link code&quot; below. Open Pay Alone from the new Home Screen icon and enter the code.</li>
+            <li>In the Home Screen app, tap &quot;Turn on alerts&quot;.</li>
+          </ol>
+        </>
+      )}
+      {(status === "off" || status === "denied") && (
+        <button className="wide" disabled={busy || status === "denied"} onClick={() => void turnOn()}>
+          <Icon name="bell" size={22} /> {busy ? "Turning on…" : "Turn on alerts"}
+        </button>
+      )}
+      {status === "on" && (
+        <button className="wide secondary" disabled={busy} onClick={() => void test()}>
+          <Icon name="bell" size={22} /> Send me a test alert
+        </button>
+      )}
+      {!isHomeScreenApp() && (
+        <button className="wide secondary" disabled={busy} onClick={() => void getLink()}>
+          Get a link code
+        </button>
+      )}
+      {link && (
+        <p className="code" aria-label={`Link code ${link.split("").join(" ")}`}>
+          {link}
+        </p>
+      )}
+      {message && (
+        <p role="status" aria-live="polite">
+          {message}
+        </p>
+      )}
+    </section>
   );
 }
 
@@ -530,6 +980,7 @@ function Approve({
     h.current = {
       approve: async () => {
         toolText.current = "";
+        void sayHowTo();
         const s = await activateRef.current(true);
         if (s === "done") return toolText.current || "not paid: the wallet did not answer.";
         if (s === "waiting") {
@@ -559,6 +1010,22 @@ function Approve({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, voiceAnswers]);
+
+  /**
+   * Tells the customer what to do to approve, in the app's own voice and their language, once the agent
+   * has stopped talking. Said every time: a blind customer must never be left waiting for a prompt they
+   * cannot see, whatever the agent said.
+   */
+  async function sayHowTo() {
+    const how = !needsFinger ? "tap" : inNativeApp() && fingerprint.some((f) => f.kind === "device") ? "finger" : "tapFinger";
+    const text =
+      how === "finger" ? "Now rest your finger on the Home button to pay." : how === "tap" ? "Now tap the screen once to pay." : "Now tap the screen once, then rest your finger on the Home button.";
+    for (let i = 0; i < 25 && live.session.current && live.modeNow() === "speaking"; i++) await new Promise((r) => setTimeout(r, 200));
+    await new Promise((r) => setTimeout(r, 400));
+    setMessage(text);
+    if (prefs.natural) await hosted.play({ what: "howto", how, id: request.id, lang: prefs.lang }, text);
+    else await voice.speak(text);
+  }
 
   function settleTool(text: string) {
     const w = toolWait.current;
@@ -815,38 +1282,80 @@ function Approve({
 
   const icon = hearing === "listening" ? "mic" : armed && needsFinger ? "finger" : armed ? "check" : "speaker";
 
+  const fee =
+    request.debitAmount && request.receiveAmount && request.debitAmount.assetCode === request.receiveAmount.assetCode
+      ? { ...request.debitAmount, value: (BigInt(request.debitAmount.value) - BigInt(request.receiveAmount.value)).toString() }
+      : null;
+  const leftAfter =
+    cap && cap.status === "active" && request.debitAmount && cap.left.assetCode === request.debitAmount.assetCode
+      ? { ...cap.left, value: (BigInt(cap.left.value) - BigInt(request.debitAmount.value)).toString() }
+      : null;
   return (
     <div className="takeover" role="dialog" aria-modal="true" aria-label="Payment request">
       <button
         ref={buttonRef}
-        className={`approve ${armed || hearing === "listening" ? "armed" : ""}`}
+        className={`approve pay-sheet ${armed || hearing === "listening" ? "armed" : ""}`}
         onClick={() => void activate()}
         disabled={busy}
         aria-describedby="approve-how"
       >
-        {live.mode ? <VoiceOrb session={live.session} mode={live.mode} /> : <Avatar name={request.merchantName} />}
-        {!request.knownPayee && <span className="new-tag">New person</span>}
-        <span className="who">{request.outgoing ? `Sending to ${request.merchantName}` : `${request.merchantName} is asking for`}</span>
-        <span className="amount">{formatAmount(request.receiveAmount ?? request.requested)}</span>
-        {request.debitAmount && <span className="debit">{formatAmount(request.debitAmount)} will leave your account</span>}
-        <span className="how" id="approve-how">
-          <Icon name={icon} size={26} />
-          {instruction}
+        <span className="pay-head">
+          <Peep name={request.merchantName} size={84} />
+          <span className="pay-who">{titleCase(request.merchantName)}</span>
+          <span className="pay-what">{request.outgoing ? "You are sending money" : "is asking you to pay"}</span>
+          {!request.knownPayee && <span className="new-tag">New person</span>}
+        </span>
+        <span className="pay-stack">
+          <span className="pay-card lime">
+            <span className="pc-label">You pay</span>
+            {request.debitAmount ? <Money a={request.debitAmount} size="lg" /> : <span className="money lg">Checking…</span>}
+            <span className="pc-foot">{leftAfter
+                ? BigInt(leftAfter.value) < BigInt(0)
+                  ? "More than what is left of your limit"
+                  : `Left of your limit after this: ${formatAmount(leftAfter)}`
+                : "Fees included"}</span>
+          </span>
+          <span className="pay-link">to {titleCase(request.merchantName)}</span>
+          <span className="pay-card dark">
+            <span className="pc-label">{request.outgoing ? "They get" : `${titleCase(request.merchantName)} gets`}</span>
+            <Money a={request.receiveAmount ?? request.requested} size="lg" />
+            <span className="pc-foot">{fee && fee.value !== "0" ? `Fee ${formatAmount(fee)}` : "No fee"}</span>
+          </span>
+        </span>
+        <span className="pay-bar" id="approve-how">
+          <span className="pay-knob">
+            <Icon name={icon} size={26} />
+          </span>
+          <span className="pay-bar-text">{instruction}</span>
         </span>
       </button>
       <div className="sr-only" role="status" aria-live="assertive">
         {message}
       </div>
-      {(live.mode ? live.lines : talk).length > 0 && (
-        <ol className="talk" aria-label="Conversation">
-          {(live.mode ? live.lines : talk).slice(-6).map((t, i) => (
+      <aside className={`voice-panel pay-voice ${live.mode || hearing || talk.length ? "on" : ""}`} aria-label="Talking about this request">
+        <header className="vp-top">
+          <span>
+            <b>Pay Alone</b>
+            <span className={`vp-status ${live.mode}`}>
+              {live.mode === "speaking" ? "Speaking" : live.mode === "listening" || hearing === "listening" ? "Listening" : live.mode === "connecting" ? "Connecting" : "Ready"}
+            </span>
+          </span>
+        </header>
+        <div className="vp-stage">
+          <span className="vp-arc a1" />
+          <span className="vp-arc a2" />
+          <VoiceOrb session={live.session} mode={live.mode || (hearing === "listening" ? "listening" : hearing === "speaking" ? "speaking" : "")} small />
+        </div>
+        <ol className="vp-talk" aria-label="Conversation">
+          {!live.mode && talk.length === 0 && <li className="app">Tap anywhere on the left and talk to me about this request. Your fingerprint pays; your voice never does.</li>}
+          {(live.mode ? live.lines : talk).slice(-4).map((t, i) => (
             <li key={i} className={t.who}>
               <span className="sr-only">{t.who === "you" ? "You said: " : "Pay Alone said: "}</span>
               {t.text}
             </li>
           ))}
         </ol>
-      )}
+      </aside>
       <button className="refuse" onClick={() => void refuse()} disabled={busy}>
         Refuse this request
       </button>
@@ -858,82 +1367,94 @@ function Approve({
  * A glowing orb that moves with the voices: it swells with the customer's voice (green) while the app
  * listens and with the agent's voice (blue) while it speaks. Decorative; the words are on screen too.
  */
-function VoiceOrb({ session, mode }: { session: React.RefObject<LiveSession | null>; mode: LiveMode }) {
-  const ref = useRef<HTMLSpanElement>(null);
-  useEffect(() => {
-    let frame = 0;
-    let smooth = 0;
-    const tick = () => {
-      const l = session.current?.levels() ?? { input: 0, output: 0 };
-      const level = mode === "speaking" ? l.output : mode === "listening" ? l.input : 0;
-      smooth = smooth * 0.75 + Math.min(1, level * 2.2) * 0.25;
-      ref.current?.style.setProperty("--level", smooth.toFixed(3));
-      frame = requestAnimationFrame(tick);
-    };
-    frame = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frame);
-  }, [session, mode]);
-  return (
-    <span className={`orb ${mode}`} ref={ref} aria-hidden="true">
-      <span className="orb-ring" />
-      <span className="orb-ring two" />
-      <span className="orb-core" />
-    </span>
-  );
+function VoiceOrb({ session, mode, small = false }: { session: React.RefObject<LiveSession | null>; mode: LiveMode | ""; small?: boolean }) {
+  const level = () => {
+    const l = session.current?.levels() ?? { input: 0, output: 0 };
+    return Math.min(1, (mode === "speaking" ? l.output : mode === "listening" ? l.input : 0) * 2.2);
+  };
+  return <GlassOrb mode={mode || "idle"} level={mode ? level : undefined} size={small ? "9rem" : "min(16rem, 62vw)"} />;
 }
 
 // ---------- talking to Pay Alone ----------
 
-/** "Talk to Pay Alone" on the home screen: starts the one live conversation, any time. */
-function TalkCard({ live, say }: { live: Live; say: (t: string) => void }) {
-  const [note, setNote] = useState("");
-  async function start() {
-    setNote("");
-    if (!(await live.start())) {
-      const text = "The voice is not available right now. Please try again in a moment.";
-      setNote(text);
-      say(text);
-    }
-  }
+function liveLabel(mode: LiveMode | "", standby = false) {
+  return mode === "connecting"
+    ? "Connecting…"
+    : mode === "speaking"
+      ? "Speaking · interrupt any time"
+      : mode === "listening"
+        ? "Listening · talk naturally"
+        : standby
+          ? "Say “Hello Pay Alone” to talk"
+          : "Tap to talk";
+}
+
+/** The voice, in one lit panel: the glass orb, what was said, and the mic. Always on the side on iPad. */
+function VoiceStage({ live, onTalk, name, full = false }: { live: Live; onTalk: () => void; name?: string; full?: boolean }) {
+  const on = Boolean(live.mode);
+  const lines = on ? live.lines.slice(-3) : [];
   return (
-    <section className="card assistant-card" aria-labelledby="assist-h">
-      <button className="wide assistant-start" onClick={() => void start()} disabled={Boolean(live.mode)}>
-        <Icon name="mic" size={26} />
-        <span id="assist-h">Talk to Pay Alone</span>
-      </button>
-      <p className="muted">Ask what is left of your limit or who you paid, or say who to send money to. Your fingerprint confirms every payment.</p>
-      {note && <p role="status">{note}</p>}
-    </section>
+    <>
+      <header className="vp-top">
+        <span>
+          <b>Pay Alone</b>
+          <span className={`vp-status ${live.mode}`}>{live.mode === "speaking" ? "Speaking" : live.mode === "listening" ? "Listening" : live.mode === "connecting" ? "Connecting" : live.standby ? "Waiting for “hello”" : "Ready"}</span>
+        </span>
+        {on && (
+          <button className="round dark" onClick={live.end} aria-label="End conversation">
+            <Icon name="cross" size={18} />
+          </button>
+        )}
+      </header>
+      <div className="vp-stage">
+        <span className="vp-arc a1" />
+        <span className="vp-arc a2" />
+        <VoiceOrb session={live.session} mode={live.mode} />
+      </div>
+      <ol className="vp-talk" aria-label="Conversation">
+        {lines.length === 0 && !on && (
+          <li className="app">
+            Hello{name ? ` ${name}` : ""}. {live.standby ? "Just say “Hello Pay Alone” and I will answer. " : ""}Ask me what is left to spend, who you paid, or tell me who to send money to.
+          </li>
+        )}
+        {lines.map((t, i) => (
+          <li key={i} className={t.who}>
+            <span className="sr-only">{t.who === "you" ? "You said: " : "Pay Alone said: "}</span>
+            {t.text}
+          </li>
+        ))}
+      </ol>
+      <div className="vp-dock">
+        <span className="vp-tip" role="status">
+          {liveLabel(live.mode, live.standby)}
+        </span>
+        <button className={`vp-mic ${live.mode}`} onClick={on ? live.end : onTalk} aria-label={on ? "End conversation" : "Talk to Pay Alone"}>
+          <span className="rp" />
+          <span className="rp r2" />
+          <span className="rp r3" />
+          <span className="vp-mic-core">
+            <Icon name={on ? "cross" : "mic"} size={30} />
+          </span>
+        </button>
+        {full && <span className="sr-only">Pay Alone conversation</span>}
+      </div>
+    </>
   );
 }
 
-/** The conversation screen when no payment is waiting: the orb, what was said, and an end button. */
-function LiveOverlay({ live }: { live: Live }) {
-  const label =
-    live.mode === "connecting" ? "Connecting…" : live.mode === "speaking" ? "Speaking… you can interrupt any time" : live.mode === "listening" ? "Listening… talk naturally" : "";
+function VoicePanel({ live, onTalk, name }: { live: Live; onTalk: () => void; name?: string }) {
   return (
-    <div className="takeover" role="dialog" aria-modal="true" aria-label="Talking to Pay Alone">
-      <div className="approve armed assistant-live">
-        {live.mode && <VoiceOrb session={live.session} mode={live.mode} />}
-        <span className="who">Pay Alone</span>
-        <span className="how" role="status">
-          <Icon name="mic" size={26} />
-          {label}
-        </span>
-      </div>
-      {live.lines.length > 0 && (
-        <ol className="talk" aria-label="Conversation">
-          {live.lines.slice(-6).map((t, i) => (
-            <li key={i} className={t.who}>
-              <span className="sr-only">{t.who === "you" ? "You said: " : "Pay Alone said: "}</span>
-              {t.text}
-            </li>
-          ))}
-        </ol>
-      )}
-      <button className="refuse" onClick={live.end}>
-        End conversation
-      </button>
+    <aside className="voice-panel" aria-label="Talk to Pay Alone">
+      <VoiceStage live={live} onTalk={onTalk} name={name} />
+    </aside>
+  );
+}
+
+/** On a phone, the conversation fills the screen in the same lit panel. */
+function LiveOverlay({ live }: { live: Live }) {
+  return (
+    <div className="voice-panel voice-full" role="dialog" aria-modal="true" aria-label="Talking to Pay Alone">
+      <VoiceStage live={live} onTalk={() => undefined} full />
     </div>
   );
 }
@@ -956,15 +1477,78 @@ function Home(props: {
   const { customer, notice, say, live } = props;
   const cap = customer.cap;
   const digits = customer.payCode.split("").join(" ");
+  const name = customer.name ? titleCase(customer.name) : "";
+  const active = cap && cap.status === "active" ? cap : null;
+  const pct = active ? Number((BigInt(active.spent.value) * BigInt(100)) / (BigInt(active.limit.value) || BigInt(1))) : 0;
+  const leftPct = active ? Math.max(0, 100 - pct) : 0;
+  const week = weekSummary(props.history);
+  const people = peopleOf(props.history);
+  const [note, setNote] = useState("");
+  async function talk() {
+    setNote("");
+    if (!(await live.start())) {
+      const text = "The voice is not available right now. Please try again in a moment.";
+      setNote(text);
+      say(text);
+    }
+  }
+  const openSettings = () => {
+    const d = document.getElementById("settings") as HTMLDetailsElement | null;
+    if (d) d.open = true;
+  };
+  const today = new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" });
+  const [showCode, setShowCode] = useState(false);
+  useEffect(() => {
+    const open = () => setShowCode(true);
+    window.addEventListener("payalone:show-code", open);
+    return () => window.removeEventListener("payalone:show-code", open);
+  }, []);
 
   return (
-    <>
-      <AppBar role="Customer" />
-      <main>
-        <h1>Hello{customer.name ? `, ${customer.name}` : ""}</h1>
-        <p className="muted">
-          Paying from {customer.walletAddress} in {customer.assetCode}.
-        </p>
+    <div className="dash">
+      <aside className="rail" aria-label="Main">
+        <span className="rail-logo" aria-hidden="true">
+          <Icon name="shield" size={22} />
+        </span>
+        <a href="#top" className="rail-btn on" aria-label="Home">
+          <Icon name="home" />
+        </a>
+        <button className="rail-btn" aria-label="Talk to Pay Alone" onClick={() => void talk()}>
+          <Icon name="mic" />
+        </button>
+        <a href="#payments" className="rail-btn" aria-label="Your payments">
+          <Icon name="list" />
+        </a>
+        <button className="rail-btn" aria-label="Show my pay code and QR code" onClick={() => setShowCode(true)}>
+          <Icon name="qr" />
+        </button>
+        <a href="#safety" className="rail-btn" aria-label="Limit and fingerprint">
+          <Icon name="shield" />
+        </a>
+        <a href="#settings" className="rail-btn" aria-label="Voice and settings" onClick={openSettings}>
+          <Icon name="gear" />
+        </a>
+        <span className="rail-me">
+          <Peep name={customer.name ?? "you"} bg="ffffff" size={46} self />
+        </span>
+      </aside>
+
+      <main className="board" id="top">
+        <header className="board-top">
+          <div>
+            <p className="hi">Hi {name || "there"},</p>
+            <h1 className="welcome">Welcome back!</h1>
+            <p className="sub">{today}</p>
+          </div>
+          <div className="top-actions">
+            <span className="chip-soft">
+              <span className="live-dot" /> Test wallet connected
+            </span>
+            <a href="#settings" className="round" aria-label="Voice and settings" onClick={openSettings}>
+              <Icon name="gear" />
+            </a>
+          </div>
+        </header>
 
         {notice && (
           <div className={`status ${notice.good ? "good" : "bad"}`} role="status" aria-live="polite">
@@ -978,11 +1562,160 @@ function Home(props: {
           </div>
         )}
         {props.loadError && <p role="alert">Cannot check for new requests: {props.loadError.message} Still trying.</p>}
+        {note && <p role="status">{note}</p>}
 
-        <TalkCard live={live} say={say} />
-        {live.mode && <LiveOverlay live={live} />}
+        <section className="row-1">
+          <div className="wallet-stack" aria-label="Your wallet">
+            <div className="stack-top">
+              <div className="stack-row">
+                <span>{name || "Your wallet"}</span>
+                <span className="op-mark">Open Payments</span>
+              </div>
+              <div className="stack-row strong">
+                <span>Pay code&nbsp;&nbsp;{customer.payCode.replace(/(\d{3})(\d{3})/, "$1 $2")}</span>
+                <button className="qr-chip" onClick={() => setShowCode(true)} aria-label="Show my QR code">
+                  <Icon name="qr" size={18} /> QR
+                </button>
+                <span className="cur-mark">{customer.assetCode}</span>
+              </div>
+            </div>
+            <div className="stack-body">
+              <span className="notch" aria-hidden="true" />
+              <div className="frame">
+                <span className="coin" aria-hidden="true">
+                  {symbolOf(customer.assetCode)}
+                </span>
+                {active ? <Money a={active.left} size="xl" /> : <span className="money xl">No limit</span>}
+                <span className="frame-label">{active ? `Left to spend this ${active.every}, of ${formatAmount(active.limit)}` : "Set a spending limit below"}</span>
+                {active && (
+                  <span className="frame-bar" aria-hidden="true">
+                    <span style={{ width: `${leftPct}%` }} />
+                  </span>
+                )}
+              </div>
+              <div className="pill-row">
+                <button
+                  className="pill ghost"
+                  onClick={() => say(active ? `${speakAmount(active.left)} is left to spend this ${active.every}.` : "You have no spending limit set.")}
+                >
+                  <Icon name="speaker" size={20} /> Say it aloud
+                </button>
+                <button className="pill solid" onClick={() => void talk()} disabled={Boolean(live.mode)}>
+                  <Icon name="mic" size={20} /> Talk
+                </button>
+              </div>
+            </div>
+          </div>
 
-        <section className="card" aria-labelledby="code-h">
+          <div className="card chart-card">
+            <div className="card-top">
+              <span className="chip-coin" aria-hidden="true">
+                {symbolOf(customer.assetCode)}
+              </span>
+              <b>Spent this week</b>
+              {active && <span className="pct">{pct}%</span>}
+            </div>
+            {active ? <Money a={active.spent} size="lg" /> : <Money a={{ value: week.total, assetCode: customer.assetCode, assetScale: customer.assetScale }} size="lg" />}
+            <span className="muted">
+              {week.paid} paid · {week.refused} not paid
+            </span>
+            <div className="bars" aria-hidden="true">
+              {week.days.map((d) => (
+                <span key={d.label} className={`bar ${d.today ? "today" : ""}`}>
+                  <span className="bar-col">
+                    <span className="bar-fill" style={{ height: `${Math.max(6, (d.value / week.max) * 100)}%` }} />
+                  </span>
+                  <span className="bar-d">{d.label}</span>
+                </span>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="row-2">
+          <div className="card" id="people">
+            <div className="card-head2">
+              <b>People you pay</b>
+            </div>
+            <div className="people">
+              {people.slice(0, 3).map((p) => (
+                <div key={p.name} className="person">
+                  <Peep name={p.name} size={56} />
+                  <b>{titleCase(p.name)}</b>
+                  <span>{p.paid ? `Paid ${p.paid === 1 ? "once" : `${p.paid} times`}` : "Asked recently"}</span>
+                </div>
+              ))}
+              <button className="person add" onClick={() => void talk()} aria-label="Send money by voice">
+                <span className="add-btn">+</span>
+                <b>Send</b>
+                <span>By voice</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="card">
+            <div className="card-head2">
+              <b>Recent activity</b>
+              <a className="link" href="#payments">
+                History
+              </a>
+            </div>
+            {props.history.length === 0 ? (
+              <p className="muted">No payments yet.</p>
+            ) : (
+              <ol className="activity">
+                {props.history.slice(0, 3).map((h) => (
+                  <li key={h.id}>
+                    <Peep name={h.merchantName} size={44} />
+                    <span className="act-text">
+                      <b>{titleCase(h.merchantName)}</b>
+                      <span>
+                        {h.status === "paid" ? "Paid" : h.status === "declined" ? "Refused" : h.status === "expired" ? "Timed out" : "Not paid"} ·{" "}
+                        {new Date(h.at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
+                      </span>
+                    </span>
+                    <span className={`act-amt ${h.status === "paid" ? "" : "off"}`}>
+                      {h.status === "paid" ? "−" : ""}
+                      {formatAmount(h.debitAmount ?? h.requested)}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </div>
+        </section>
+
+        <section className="row-3" id="safety">
+          <div className="safe">
+            <span className="safe-ic">
+              <Icon name="finger" />
+            </span>
+            <span>
+              <b>{customer.fingerprint.length ? "Fingerprint on" : "Fingerprint not set up"}</b>
+              <span>{customer.fingerprint.length ? "Every payment needs your finger" : "Set it up below"}</span>
+            </span>
+          </div>
+          <div className="safe">
+            <span className="safe-ic">
+              <Icon name="shield" />
+            </span>
+            <span>
+              <b>{active ? "Limit set by your wallet" : "No limit yet"}</b>
+              <span>{active ? `${formatAmount(active.limit)} a ${active.every}; it refuses more` : "Set one below"}</span>
+            </span>
+          </div>
+          <button className="safe safe-btn" onClick={() => setShowCode(true)}>
+            <span className="safe-ic">
+              <Icon name="qr" />
+            </span>
+            <span>
+              <b>Show my QR code</b>
+              <span>Pay code {customer.payCode.replace(/(\d{3})(\d{3})/, "$1 $2")} · set it as lock screen</span>
+            </span>
+          </button>
+        </section>
+
+        <section className="card" aria-labelledby="code-h" id="code">
           <div className="paycode">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img className="qr" src="/api/wallet/paycode" alt={`QR code for pay code ${digits}`} />
@@ -1005,9 +1738,11 @@ function Home(props: {
           <Fingerprint customer={customer} refresh={props.refresh} say={say} />
         </div>
 
-        <History items={props.history} say={say} />
+        <div id="payments">
+          <History items={props.history} say={say} />
+        </div>
 
-        <details className="card">
+        <details className="card" id="settings">
           <summary>
             <span className="card-icon">
               <Icon name="gear" size={22} />
@@ -1042,6 +1777,15 @@ function Home(props: {
               your voice never moves money. Uses the microphone for a few seconds; the recording is not kept.
             </span>
           </label>
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={props.prefs.auto}
+              disabled={!props.prefs.on || !props.prefs.natural}
+              onChange={(e) => props.setPrefs({ ...props.prefs, auto: e.target.checked })}
+            />
+            <span>Start talking as soon as the app opens. Uses voice minutes each time; the call ends when you leave the app or stay quiet.</span>
+          </label>
           <label htmlFor="lang">Language for requests and results</label>
           <select
             id="lang"
@@ -1059,6 +1803,7 @@ function Home(props: {
             Amounts are always said in English, as most people say them. The Pidgin, Yoruba, Igbo and Hausa sentences have not yet been checked by a native
             speaker. Instructions are in English for now.
           </p>
+          <Alerts say={say} />
           <button
             className="secondary"
             onClick={async () => {
@@ -1069,8 +1814,27 @@ function Home(props: {
             Forget this device
           </button>
         </details>
+
+        <nav className="dock" aria-label="Main">
+          <a href="#top" className="dock-btn on" aria-label="Home">
+            <Icon name="home" size={24} />
+          </a>
+          <button className="dock-btn" aria-label="Talk to Pay Alone" onClick={() => void talk()}>
+            <Icon name="mic" size={24} />
+          </button>
+          <a href="#payments" className="dock-btn" aria-label="Your payments">
+            <Icon name="list" size={24} />
+          </a>
+          <a href="#settings" className="dock-btn" aria-label="Voice and settings" onClick={openSettings}>
+            <Icon name="gear" size={24} />
+          </a>
+        </nav>
       </main>
-    </>
+
+      <VoicePanel live={live} onTalk={() => void talk()} name={name} />
+      {showCode && <PayCodeSheet payCode={customer.payCode} say={say} onClose={() => setShowCode(false)} />}
+      {live.mode && <LiveOverlay live={live} />}
+    </div>
   );
 }
 
@@ -1131,7 +1895,7 @@ function Limit({
   }
 
   return (
-    <section className="card" aria-labelledby="limit-h">
+    <section className="card" aria-labelledby="limit-h" id="limit">
       <div className="card-head">
         <span className="card-icon">
           <Icon name="shield" size={22} />
@@ -1215,6 +1979,70 @@ function Meter({ spent, limit }: { spent: Amount; limit: Amount }) {
 }
 
 /** Makes a picture with the pay code low on the screen, to set as the lock-screen wallpaper. */
+/** The pay code as a large QR, and setting it as the lock screen (once, with an Apple Shortcut). */
+function PayCodeSheet({ payCode, say, onClose }: { payCode: string; say: (t: string) => void; onClose: () => void }) {
+  const digits = payCode.split("").join(" ");
+  const [link, setLink] = useState("");
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    void api<{ url: string }>("/api/wallet/lockscreen").then((r) => setLink(r.url)).catch(() => undefined);
+  }, []);
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopied(true);
+      say("The picture link is copied. Now open the Shortcuts app.");
+    } catch {
+      setCopied(false);
+    }
+  }
+  return (
+    <div className="sheet-back" role="dialog" aria-modal="true" aria-labelledby="sheet-h" onClick={onClose}>
+      <div className="sheet" onClick={(e) => e.stopPropagation()}>
+        <div className="sheet-head">
+          <h2 id="sheet-h">Your pay code</h2>
+          <button className="round" onClick={onClose} aria-label="Close">
+            <Icon name="cross" size={20} />
+          </button>
+        </div>
+        <div className="sheet-grid">
+          <div className="sheet-qr">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/api/wallet/paycode" alt={`QR code for pay code ${digits}`} />
+            <p className="sheet-code" aria-label={`Pay code ${digits}`}>
+              {payCode.replace(/(\d{3})(\d{3})/, "$1 $2")}
+            </p>
+            <p className="muted">A seller scans this or types the six digits to ask you for money. It cannot take money; only your fingerprint can.</p>
+            <button className="wide secondary" onClick={() => say(`Your pay code is ${digits}. Again: ${digits}.`)}>
+              <Icon name="speaker" size={20} /> Say it aloud
+            </button>
+          </div>
+          <div className="sheet-steps">
+            <h3>Put it on your lock screen</h3>
+            <p className="muted">Then a seller can scan it without you unlocking anything.</p>
+            <a className="button wide" href={link || "#"} target="_blank" rel="noreferrer" aria-disabled={!link}>
+              Open the lock-screen picture
+            </a>
+            <p className="muted">Touch and hold the picture, choose Save to Photos, then in Photos choose Use as Wallpaper.</p>
+            <h3>Or set it automatically (once)</h3>
+            <ol>
+              <li>
+                <button className="secondary" onClick={() => void copy()} disabled={!link}>
+                  {copied ? "Link copied" : "Copy my picture link"}
+                </button>
+              </li>
+              <li>Open the Shortcuts app and tap +.</li>
+              <li>Add the action “Get Contents of URL” and paste the link.</li>
+              <li>Add the action “Set Wallpaper”, choose Lock Screen, and turn off Show Preview.</li>
+              <li>Name it “Pay code wallpaper” and tap Run. Later just say “Hey Siri, pay code wallpaper”.</li>
+            </ol>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function LockScreenPicture({ payCode }: { payCode: string }) {
   const [problem, setProblem] = useState("");
 

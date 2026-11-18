@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-type IconName = "shop" | "person" | "shield" | "finger" | "check" | "cross" | "clock" | "speaker" | "mic" | "qr" | "back" | "stop" | "list" | "gear";
+type IconName = "shop" | "person" | "shield" | "finger" | "check" | "cross" | "clock" | "speaker" | "mic" | "qr" | "back" | "stop" | "list" | "gear" | "bell" | "home";
 
 const PATHS: Record<IconName, string> = {
   shop: "M3 9l1.5-5h15L21 9M3 9h18M3 9v11h18V9M8 20v-6h8v6",
@@ -16,6 +16,8 @@ const PATHS: Record<IconName, string> = {
   back: "M15 5l-7 7 7 7",
   stop: "M12 21a9 9 0 100-18 9 9 0 000 18zM8 8l8 8",
   list: "M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01",
+  home: "M4 11.5L12 5l8 6.5V20h-5.5v-5.5h-5V20H4z",
+  bell: "M6 16V11a6 6 0 0112 0v5l2 2H4l2-2zm4 4a2 2 0 004 0",
   gear: "M12 15a3 3 0 100-6 3 3 0 000 6zm7.4-3a7.4 7.4 0 00-.1-1.3l2-1.6-2-3.4-2.4 1a7.5 7.5 0 00-2.2-1.3L14.4 2h-4l-.4 2.5a7.5 7.5 0 00-2.2 1.3l-2.4-1-2 3.4 2 1.6a7.4 7.4 0 000 2.6l-2 1.6 2 3.4 2.4-1a7.5 7.5 0 002.2 1.3l.4 2.5h4l.4-2.5a7.5 7.5 0 002.2-1.3l2.4 1 2-3.4-2-1.6c.1-.4.1-.9.1-1.3z",
 };
 

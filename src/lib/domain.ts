@@ -2,7 +2,8 @@
 import { randomInt } from "crypto";
 import { challengeIsValid, issueChallenge, verifyApproval, type ApprovalChallenge, type ApprovalProof } from "./approval";
 import { makeInterval, periodEnd, periodKey, type Every } from "./interval";
-import { exceedsCap, formatAmount, parseMajor, remainingOfCap, type Amount } from "./money";
+import { exceedsCap, formatAmount, parseMajor, remainingOfCap, speakAmount, type Amount } from "./money";
+import { alertCustomer } from "./push";
 import { gateway, isSimulated, OpError, type OpErrorKind, type QuoteInfo, type WalletInfo } from "./op";
 import { verifyInteractionHash } from "./op/hash";
 import { MOCK_HOST } from "./op/mock";
@@ -64,6 +65,8 @@ export interface Customer {
   /** Secure Enclave keys from the native iPad app (ios/). Count as a fingerprint too. */
   deviceKeys?: StoredDeviceKey[];
   deviceKeyChallenge?: { challenge: string; expiresAt: string };
+  /** More devices (or the Home Screen app) linked with a one-time link code. Hashes only. */
+  otherDeviceHashes?: string[];
 }
 
 function hasFingerprint(c: Customer): boolean {
@@ -200,35 +203,57 @@ export async function createRequest(payCode: string, amountMajor: string): Promi
     expiresAt,
   };
   await store().put("requests", request.id, request);
+  await alertCustomer(customer.id, {
+    title: "Payment request",
+    body: `${request.merchantName} asks you for ${speakAmount(request.requested)}. Unlock with your fingerprint and open Pay Alone to answer.`,
+    url: "/wallet",
+    tag: `request-${request.id}`,
+  });
   return request;
 }
 
-/** A saved person whose name matches what the customer said. Ignores case, spaces and punctuation. */
-export function findContact(customer: Customer, said: string): Contact | null {
+/** Someone the customer can send money to: a saved person, or someone who asked them for money in the last day. */
+export type Payee = { walletId: string; name: string; why: "paid before" | "asked recently" };
+
+const RECENT_ASK_MS = 24 * 60 * 60 * 1000;
+
+export async function payeesOf(customer: Customer): Promise<Payee[]> {
+  const out: Payee[] = Object.values(customer.contacts).map((c) => ({ walletId: c.walletId, name: c.name, why: "paid before" as const }));
+  const since = Date.now() - RECENT_ASK_MS;
+  const asked = (await store().list<PaymentRequest>("requests"))
+    .filter((r) => r.customerId === customer.id && !r.outgoing && Date.parse(r.createdAt) >= since)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  for (const r of asked) {
+    if (!out.some((p) => p.walletId === r.merchantWalletId)) out.push({ walletId: r.merchantWalletId, name: r.merchantName, why: "asked recently" });
+  }
+  return out;
+}
+
+/** The payee whose name matches what the customer said. Ignores case, spaces and punctuation. */
+export function findPayee(payees: Payee[], said: string): Payee | null {
   const norm = (x: string) => x.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
   const want = norm(said);
   if (!want) return null;
-  const all = Object.values(customer.contacts);
-  return (
-    all.find((c) => norm(c.name) === want) ??
-    all.find((c) => norm(c.name).includes(want) || want.includes(norm(c.name))) ??
-    null
-  );
+  return payees.find((p) => norm(p.name) === want) ?? payees.find((p) => norm(p.name).includes(want) || want.includes(norm(p.name))) ?? null;
 }
 
 /**
- * The customer sends money to someone they have paid before (asked for by voice). It becomes an open
+ * The customer sends money to someone they have paid before, or who asked them for money in the last
+ * day (for example after refusing by mistake). Asked for by voice. It becomes an open
  * request like a seller's: the wallet quotes it, and it is approved the same way, with the fingerprint.
  * The incoming payment is created on the receiver's wallet with a non-interactive grant, as Open
  * Payments allows for any client.
  */
 export async function sendToContact(customer: Customer, to: string, amountMajor: string): Promise<PaymentRequest> {
-  const contact = findContact(customer, to);
+  const payees = await payeesOf(customer);
+  const contact = findPayee(payees, to);
   if (!contact) {
-    const names = Object.values(customer.contacts).map((c) => c.name);
+    const names = payees.map((c) => c.name);
     throw new DomainError(
       "not_found",
-      names.length ? `There is nobody called ${to} among the people you have paid. You have paid: ${names.join(", ")}.` : "You have not paid anybody through this app yet, so there is nobody to send to.",
+      names.length
+        ? `There is nobody called ${to} among the people you can send to. You can send to: ${names.join(", ")}.`
+        : "You have not paid anybody, and nobody has asked you for money, so there is nobody to send to yet.",
     );
   }
   if (await pendingRequest(customer)) throw new DomainError("wrong_state", "Another payment is waiting. Answer that one first.");
@@ -320,7 +345,49 @@ export async function customerFromDeviceToken(token: string | undefined): Promis
   const [id, secret] = token.split(".");
   if (!id || !secret) return null;
   const customer = await store().get<Customer>("customers", id);
-  return customer && customer.deviceHash === sha256(secret) ? customer : null;
+  if (!customer) return null;
+  const h = sha256(secret);
+  return customer.deviceHash === h || customer.otherDeviceHashes?.includes(h) ? customer : null;
+}
+
+// ---------- linking another device (for example the Home Screen app, which has its own cookies) ----------
+
+interface LinkCode {
+  id: string; // sha256 of the code
+  customerId: string;
+  expiresAt: string;
+}
+
+const LINK_TTL_MS = 10 * 60 * 1000;
+
+/** A six-digit code, good for ten minutes and one use, that signs another device in as this customer. */
+export async function startLink(customer: Customer): Promise<{ code: string; expiresAt: string }> {
+  const code = String(randomInt(0, 1_000_000)).padStart(6, "0");
+  const expiresAt = new Date(Date.now() + LINK_TTL_MS).toISOString();
+  await store().put<LinkCode>("links", sha256(`link:${code}`), { id: sha256(`link:${code}`), customerId: customer.id, expiresAt });
+  return { code, expiresAt };
+}
+
+export async function finishLink(code: string): Promise<{ customer: Customer; deviceToken: string }> {
+  // Six digits can be guessed, so wrong tries are counted for everyone: after 30 in ten minutes, linking pauses.
+  const now = Date.now();
+  const tries = (await store().get<{ start: number; count: number }>("links", "wrong-tries")) ?? { start: now, count: 0 };
+  if (now - tries.start > LINK_TTL_MS) Object.assign(tries, { start: now, count: 0 });
+  if (tries.count >= 30) throw new DomainError("not_allowed", "Too many wrong link codes. Wait ten minutes and get a new code.");
+  const digits = code.replace(/\D/g, "");
+  const id = sha256(`link:${digits}`);
+  const link = digits.length === 6 ? await store().get<LinkCode>("links", id) : null;
+  if (!link || Date.parse(link.expiresAt) < now) {
+    await store().put("links", "wrong-tries", { start: tries.start, count: tries.count + 1 });
+    throw new DomainError("not_found", "That link code is wrong or has expired. Get a new one.");
+  }
+  await store().delete("links", id);
+  const customer = await store().get<Customer>("customers", link.customerId);
+  if (!customer) throw new DomainError("not_found", "That link code is wrong or has expired. Get a new one.");
+  const secret = randomToken(24);
+  customer.otherDeviceHashes = [...(customer.otherDeviceHashes ?? []).slice(-4), sha256(secret)];
+  await store().put("customers", customer.id, customer);
+  return { customer, deviceToken: `${customer.id}.${secret}` };
 }
 
 // ---------- wallet app: cap ----------

@@ -160,6 +160,21 @@ function unlockAudio(): Promise<MediaStream | null> {
   }) ?? Promise.resolve(null);
 }
 
+/**
+ * Safari may hold back the agent's audio when the conversation started without a tap (the app
+ * opened it by itself). Any tap anywhere calls this: it resumes sound and plays held-back audio.
+ */
+export function nudgeAudio(): void {
+  try {
+    const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    const ctx = new Ctx();
+    void ctx.resume().finally(() => setTimeout(() => void ctx.close(), 500));
+  } catch {}
+  document.querySelectorAll("audio").forEach((a) => {
+    if (a.paused) void a.play().catch(() => undefined);
+  });
+}
+
 /** Starts the conversation: WebRTC first, then WebSocket; in the chosen language, then English. */
 export async function startLive(o: LiveOptions): Promise<LiveSession> {
   o.onMode("connecting");
