@@ -89,6 +89,8 @@ interface State {
 /** The one live voice conversation (ElevenLabs agent), shared by the home screen and the payment screen. */
 interface Live {
   mode: LiveMode | "";
+  /** The mode right now (for code that runs later than the render it was made in). */
+  modeNow: () => LiveMode | "";
   lines: { who: "app" | "you"; text: string }[];
   session: React.RefObject<LiveSession | null>;
   active: React.RefObject<boolean>;
@@ -166,7 +168,12 @@ export default function WalletPage() {
   const appVoice = prefs.on;
   const spokenFor = useRef<string>("");
   // The one live voice conversation.
-  const [liveMode, setLiveMode] = useState<LiveMode | "">("");
+  const [liveMode, setLiveModeState] = useState<LiveMode | "">("");
+  const liveModeRef = useRef<LiveMode | "">("");
+  const setLiveMode = useCallback((m: LiveMode | "") => {
+    liveModeRef.current = m;
+    setLiveModeState(m);
+  }, []);
   const [liveLines, setLiveLines] = useState<{ who: "app" | "you"; text: string }[]>([]);
   const liveSession = useRef<LiveSession | null>(null);
   const liveActive = useRef(false);
@@ -295,11 +302,12 @@ export default function WalletPage() {
         return false;
       }
     },
-    [prefs.lang, refresh],
+    [prefs.lang, refresh, setLiveMode],
   );
 
   const live: Live = {
     mode: liveMode,
+    modeNow: () => liveModeRef.current,
     lines: liveLines,
     session: liveSession,
     active: liveActive,
@@ -530,6 +538,7 @@ function Approve({
     h.current = {
       approve: async () => {
         toolText.current = "";
+        void sayHowTo();
         const s = await activateRef.current(true);
         if (s === "done") return toolText.current || "not paid: the wallet did not answer.";
         if (s === "waiting") {
@@ -559,6 +568,22 @@ function Approve({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, voiceAnswers]);
+
+  /**
+   * Tells the customer what to do to approve, in the app's own voice and their language, once the agent
+   * has stopped talking. Said every time: a blind customer must never be left waiting for a prompt they
+   * cannot see, whatever the agent said.
+   */
+  async function sayHowTo() {
+    const how = !needsFinger ? "tap" : inNativeApp() && fingerprint.some((f) => f.kind === "device") ? "finger" : "tapFinger";
+    const text =
+      how === "finger" ? "Now rest your finger on the Home button to pay." : how === "tap" ? "Now tap the screen once to pay." : "Now tap the screen once, then rest your finger on the Home button.";
+    for (let i = 0; i < 25 && live.session.current && live.modeNow() === "speaking"; i++) await new Promise((r) => setTimeout(r, 200));
+    await new Promise((r) => setTimeout(r, 400));
+    setMessage(text);
+    if (prefs.natural) await hosted.play({ what: "howto", how, id: request.id, lang: prefs.lang }, text);
+    else await voice.speak(text);
+  }
 
   function settleTool(text: string) {
     const w = toolWait.current;

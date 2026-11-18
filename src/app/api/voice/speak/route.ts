@@ -2,7 +2,7 @@ import { capSummary, getRequestFor } from "@/lib/domain";
 import { fail, requireCustomer } from "@/lib/http";
 import { synthesize } from "@/lib/voice/providers";
 import { exceedsCap, remainingOfCap } from "@/lib/money";
-import { answerSentence, askingSentence, isLang, leftSentence, paidWithLeftSentence, replySentence, resultSentence, type ReplyKind } from "@/lib/voice/sentences";
+import { answerSentence, askingSentence, howtoSentence, isLang, leftSentence, paidWithLeftSentence, replySentence, resultSentence, type HowTo, type ReplyKind } from "@/lib/voice/sentences";
 
 const REPLIES: ReplyKind[] = ["who", "left", "help", "unclear"];
 
@@ -17,7 +17,11 @@ export async function GET(req: Request) {
     const customer = await requireCustomer();
     let text: string;
     const what = q.get("what");
-    if (what === "left") {
+    if (what === "howto") {
+      const how = q.get("how") as HowTo;
+      if (how !== "finger" && how !== "tapFinger" && how !== "tap") return new Response(null, { status: 400 });
+      text = howtoSentence(lang, how);
+    } else if (what === "left") {
       const cap = capSummary(customer.cap);
       if (!cap || cap.status !== "active") return new Response(null, { status: 404 });
       text = leftSentence(lang, cap.left, cap.limit);

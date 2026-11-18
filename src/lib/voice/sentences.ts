@@ -28,7 +28,11 @@ interface Words {
   over: string;
   help: string;
   unclear: string;
+  /** What to do now to approve: fingerprint only, a tap then the fingerprint, or a tap only. */
+  howto: Record<HowTo, string>;
 }
+
+export type HowTo = "finger" | "tapFinger" | "tap";
 
 const W: Record<Lang, Words> = {
   en: {
@@ -45,6 +49,7 @@ const W: Record<Lang, Words> = {
     over: "This payment is more than what is left, so your wallet will refuse it.",
     help: "You can ask who is this, how much is left, or say again. To pay, say pay. To refuse, say no.",
     unclear: "Sorry, I did not catch that.",
+    howto: { finger: "Now rest your finger on the Home button to pay.", tapFinger: "Now tap the screen once, then rest your finger on the Home button.", tap: "Now tap the screen once to pay." },
   },
   pcm: {
     newPerson: (n) => `New person wey you never pay before, ${n},`,
@@ -60,6 +65,7 @@ const W: Record<Lang, Words> = {
     over: "This payment pass wetin remain, so your wallet no go gree.",
     help: "You fit ask who be this, how much remain, or make I talk am again. To pay, talk pay. To refuse, talk no.",
     unclear: "Sorry, I no hear you well.",
+    howto: { finger: "Now put your finger for the Home button make you pay.", tapFinger: "Now tap the screen one time, then put your finger for the Home button.", tap: "Now tap the screen one time make you pay." },
   },
   yo: {
     newPerson: (n) => `Ẹni tuntun tí o kò sanwó fún rí, ${n},`,
@@ -75,6 +81,7 @@ const W: Record<Lang, Words> = {
     over: "Owó yìí ju èyí tó kù lọ, nítorí náà àpamọ́wọ́ rẹ yóò kọ̀ ọ́.",
     help: "O lè béèrè ta ni, èló ló kù, tàbí kí n tún un sọ. Láti sanwó, sọ pé san. Láti kọ̀, sọ pé rárá.",
     unclear: "Ẹ má bínú, mi ò gbọ́ yín dáadáa.",
+    howto: { finger: "Ní báyìí, fi ìka yín lé bọ́tìnnì Home láti sanwó.", tapFinger: "Ní báyìí, tẹ ojú fóònù lẹ́ẹ̀kan, lẹ́yìn náà fi ìka yín lé bọ́tìnnì Home.", tap: "Ní báyìí, tẹ ojú fóònù lẹ́ẹ̀kan láti sanwó." },
   },
   ig: {
     newPerson: (n) => `Onye ọhụrụ ị na-akwụbeghị ụgwọ, ${n},`,
@@ -90,6 +97,7 @@ const W: Record<Lang, Words> = {
     over: "Ego a karịrị nke fọdụrụ, ya mere obere akpa gị ga-ajụ ya.",
     help: "Ị nwere ike ịjụ onye bụ ya, ego ole fọdụrụ, ma ọ bụ ka m kwuo ya ọzọ. Ka ị kwụọ, kwuo kwụọ. Ka ị jụ, kwuo mba.",
     unclear: "Ndo, anụghị m gị nke ọma.",
+    howto: { finger: "Ugbu a, tinye mkpịsị aka gị na bọtịnụ Home ka ị kwụọ ụgwọ.", tapFinger: "Ugbu a, metụ ihuenyo otu ugboro, wee tinye mkpịsị aka gị na bọtịnụ Home.", tap: "Ugbu a, metụ ihuenyo otu ugboro ka ị kwụọ ụgwọ." },
   },
   ha: {
     newPerson: (n) => `Sabon mutum da ba ka taɓa biya ba, ${n},`,
@@ -105,6 +113,7 @@ const W: Record<Lang, Words> = {
     over: "Wannan kuɗin ya fi abin da ya rage, don haka walat ɗinka zai ƙi.",
     help: "Kana iya tambaya wanene, nawa ya rage, ko in sake faɗa. Don ka biya, ka ce biya. Don ka ƙi, ka ce a'a.",
     unclear: "Yi haƙuri, ban ji ka sosai ba.",
+    howto: { finger: "Yanzu, ɗora yatsanka a kan maɓallin Home don ka biya.", tapFinger: "Yanzu, taɓa allon sau ɗaya, sannan ka ɗora yatsanka a kan maɓallin Home.", tap: "Yanzu, taɓa allon sau ɗaya don ka biya." },
   },
 };
 
@@ -152,4 +161,9 @@ export function paidWithLeftSentence(lang: Lang, a: { name: string; debit: Amoun
   const w = W[lang];
   const paid = w.paid(a.name, speakAmount(a.debit));
   return a.left && a.limit ? `${paid} ${w.left(speakAmount(a.left), speakAmount(a.limit))}` : paid;
+}
+
+/** The spoken instruction for approving a payment, said by the app itself so it is never left out. */
+export function howtoSentence(lang: Lang, how: HowTo) {
+  return W[lang].howto[how];
 }
