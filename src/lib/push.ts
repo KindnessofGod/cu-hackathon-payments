@@ -80,14 +80,15 @@ export async function alertCustomer(customerId: string, alert: Alert): Promise<{
     await Promise.all(
       subs.map(async (p) => {
         try {
-          await webpush.sendNotification(p.subscription, JSON.stringify(alert), { TTL: 600, urgency: "high", timeout: 5000 });
+          const r = await webpush.sendNotification(p.subscription, JSON.stringify(alert), { TTL: 600, urgency: "high", timeout: 5000 });
+          console.log("push sent:", new URL(p.subscription.endpoint).host, r.statusCode, alert.tag);
           sent++;
         } catch (e) {
           failed++;
           const code = (e as { statusCode?: number }).statusCode;
           // 404/410: the device turned alerts off or the app was removed. Forget it.
           if (code === 404 || code === 410) await store().delete("push", p.id).catch(() => undefined);
-          else console.error("push failed:", code ?? (e instanceof Error ? e.message : e));
+          console.error("push failed:", code ?? "", (e as { body?: string }).body ?? (e instanceof Error ? e.message : e));
         }
       }),
     );

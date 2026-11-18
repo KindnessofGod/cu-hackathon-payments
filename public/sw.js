@@ -10,16 +10,13 @@ self.addEventListener("push", (event) => {
     data = { body: event.data ? event.data.text() : "" };
   }
   const title = data.title || "Pay Alone";
+  const body = data.body || "Open Pay Alone.";
+  const url = data.url || "/wallet";
+  // Every push must show an alert, or iPadOS stops delivering them. Fall back to the plainest one.
   event.waitUntil(
-    self.registration.showNotification(title, {
-      body: data.body || "Open Pay Alone.",
-      tag: data.tag || "pay-alone",
-      renotify: true,
-      requireInteraction: true,
-      icon: "/icon-192.png",
-      badge: "/icon-192.png",
-      data: { url: data.url || "/wallet" },
-    }),
+    self.registration
+      .showNotification(title, { body, tag: data.tag || "pay-alone", icon: "/icon-192.png", data: { url } })
+      .catch(() => self.registration.showNotification(title, { body, data: { url } })),
   );
 });
 
