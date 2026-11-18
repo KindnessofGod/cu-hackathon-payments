@@ -1,3 +1,5 @@
+<p align="center"><img src="public/icon-512.png" alt="Pay Alone logo" width="120"></p>
+
 # Pay Alone: a wallet for people who must operate alone
 
 CU Next Gen Hackathon 2026, Track 2: Inclusive Payments and Financial Access. Built on Interledger Open Payments.

@@ -15,6 +15,13 @@ Runtime:
 - `pg` 8.23.1 (MIT): Postgres driver for the deployed store.
 - `spitch` 1.49.0 (Apache-2.0): Spitch's official SDK, used for the Igbo voice.
 - `@simplewebauthn/server` 14.1.0 and `@simplewebauthn/browser` 14.0.0 (MIT): fingerprint (passkey) setup and checks.
+- `@elevenlabs/react` 1.23.0 (MIT): the live voice conversation.
+- `three` 0.170.0 (MIT): draws the voice orb (our own shader).
+- `web-push` 3.6.7 (MPL-2.0): lock-screen alerts.
+- `@dicebear/core` and `@dicebear/open-peeps` 9.4.2 (MIT code; Open Peeps artwork by Pablo Stanley, CC0): illustrations of people.
+- Font Outfit (SIL Open Font License), loaded with `next/font/google`.
+
+Branding: the name "Pay Alone", the logo (`public/icon-512.png`, `public/icon-192.png`, `public/apple-touch-icon.png`) and the colours are the team's own, made during the build window.
 
 Development only:
 - `typescript` (Apache-2.0), `vitest` (MIT), `eslint` and `eslint-config-next` (MIT), type packages (MIT).
