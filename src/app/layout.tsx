@@ -1,6 +1,9 @@
 import type { Metadata, Viewport } from "next";
 import { isSimulated } from "@/lib/op";
+import { Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
+
+const sans = Plus_Jakarta_Sans({ subsets: ["latin"], variable: "--font-sans", display: "swap" });
 
 export const dynamic = "force-dynamic";
 
@@ -10,11 +13,11 @@ export const metadata: Metadata = {
   appleWebApp: { capable: true, title: "Pay Alone", statusBarStyle: "default" },
 };
 
-export const viewport: Viewport = { width: "device-width", initialScale: 1 };
+export const viewport: Viewport = { width: "device-width", initialScale: 1, themeColor: "#f3f8f4" };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" className={sans.variable}>
       <body className={isSimulated() ? "simulated" : undefined}>
         {isSimulated() && (
           <div className="banner" role="note">

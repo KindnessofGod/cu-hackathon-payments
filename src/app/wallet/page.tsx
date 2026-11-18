@@ -9,7 +9,7 @@ import { startAuthentication, startRegistration } from "@simplewebauthn/browser"
 import { inNativeApp, nativeCreateKey, nativeSign } from "@/lib/native";
 import { canListen, recordAnswer } from "@/lib/listen";
 import type { Intent } from "@/lib/voice/intent";
-import { report, startLive, type LiveMode, type LiveSession } from "@/lib/liveVoice";
+import { nudgeAudio, report, startLive, type LiveMode, type LiveSession } from "@/lib/liveVoice";
 
 const HELP_TEXT = "You can ask: who is this, how much is left, or say again. To pay, say pay. To refuse, say no.";
 
@@ -114,6 +114,8 @@ interface VoicePrefs {
   natural: boolean;
   /** After reading a request, listen for a spoken "pay" or "no". "pay" only opens the fingerprint prompt. */
   listen: boolean;
+  /** Start the live conversation as soon as the wallet opens, with no tap. */
+  auto: boolean;
   lang: Lang;
 }
 
@@ -124,10 +126,11 @@ function readPrefs(): VoicePrefs {
       on: window.localStorage.getItem("appVoice") !== "off",
       natural: window.localStorage.getItem("naturalVoice") !== "off",
       listen: window.localStorage.getItem("voiceAnswer") !== "off",
+      auto: window.localStorage.getItem("autoTalk") !== "off",
       lang: l && l in LANG_NAMES ? l : "en",
     };
   } catch {
-    return { on: true, natural: true, listen: true, lang: "en" };
+    return { on: true, natural: true, listen: true, auto: true, lang: "en" };
   }
 }
 
@@ -164,7 +167,7 @@ export default function WalletPage() {
   const [state, setState] = useState<State | null>(null);
   const [loadError, setLoadError] = useState<ApiError | null>(null);
   const [notice, setNotice] = useState<{ text: string; good: boolean; walletSaid?: string } | null>(null);
-  const [prefs, setPrefs] = useState<VoicePrefs>({ on: true, natural: true, listen: true, lang: "en" });
+  const [prefs, setPrefs] = useState<VoicePrefs>({ on: true, natural: true, listen: true, auto: true, lang: "en" });
   const appVoice = prefs.on;
   const spokenFor = useRef<string>("");
   // The one live voice conversation.
@@ -210,8 +213,10 @@ export default function WalletPage() {
     }
   }, []);
 
+  const [prefsLoaded, setPrefsLoaded] = useState(false);
   useEffect(() => {
     setPrefs(readPrefs());
+    setPrefsLoaded(true);
     const q = new URLSearchParams(window.location.search);
     const outcome = q.get("outcome");
     if (outcome) {
@@ -332,16 +337,65 @@ export default function WalletPage() {
     },
   };
 
+  // Open the app, and Pay Alone starts talking: no tap needed. About the waiting request if there is one.
+  // Each opening counts once; leaving the app ends the call (it would keep using voice minutes).
+  const [needTap, setNeedTap] = useState(false);
+  const autoDone = useRef(false);
+  const autoOk = Boolean(prefsLoaded && prefs.on && prefs.natural && prefs.auto && state?.customer);
+  const autoPending = state?.pending ?? null;
+  const autoWaitQuote = Boolean(autoPending && !autoPending.debitAmount);
+  useEffect(() => {
+    if (!autoOk || autoDone.current || liveActive.current || autoWaitQuote) return;
+    autoDone.current = true;
+    if (autoPending) spokenFor.current = autoPending.id; // the agent reads it; do not also play the recorded sentence
+    void startLiveVoice(autoPending?.id).then((ok) => setNeedTap(!ok));
+  }, [autoOk, autoWaitQuote, autoPending, startLiveVoice]);
+  useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState === "hidden") {
+        liveSession.current?.end();
+        autoDone.current = false; // next time the app is opened, talk again
+      } else void refresh();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, [refresh]);
+  // Safari may hold back the voice of a call the app started by itself: any tap lets it play.
+  useEffect(() => {
+    const onTap = () => {
+      if (liveActive.current) nudgeAudio();
+    };
+    document.addEventListener("pointerdown", onTap);
+    return () => document.removeEventListener("pointerdown", onTap);
+  }, []);
+
+  // A conversation nobody is talking in ends by itself after 40 seconds, to save voice minutes.
+  const lastLineAt = useRef(0);
+  useEffect(() => {
+    lastLineAt.current = Date.now();
+  }, [liveLines.length, liveMode]);
+  useEffect(() => {
+    const t = setInterval(() => {
+      if (liveActive.current && liveModeRef.current === "listening" && Date.now() - lastLineAt.current > 40000) liveSession.current?.end();
+    }, 5000);
+    return () => clearInterval(t);
+  }, []);
+
   // Speak a new request once when it arrives with its exact amount.
   const pending = state?.pending ?? null;
   useEffect(() => {
     if (pending && pending.debitAmount && spokenFor.current !== pending.id) {
       spokenFor.current = pending.id;
       if (pending.id === sentByVoice.current) return; // the customer asked for it by voice; the agent is already talking about it
+      if (liveActive.current && liveFor.current === pending.id) return; // the agent is already talking about it
       if (liveActive.current && liveFor.current !== pending.id) {
         // A seller asked during a conversation: start again about this request, so the agent has its facts.
         liveSession.current?.end();
         setTimeout(() => void startLiveVoice(pending.id), 800);
+        return;
+      }
+      if (prefs.on && prefs.natural && prefs.auto && !liveActive.current) {
+        void startLiveVoice(pending.id);
         return;
       }
       if (inNativeApp() && prefs.on && prefs.listen && canListen()) return; // the approval screen asks by voice itself
@@ -405,6 +459,23 @@ export default function WalletPage() {
       />
     );
 
+  if (needTap && !liveMode)
+    return (
+      <button
+        className="tap-to-talk"
+        onClick={() => {
+          setNeedTap(false);
+          void startLiveVoice().then((ok) => setNeedTap(!ok));
+        }}
+      >
+        <span className="tap-ring" aria-hidden="true">
+          <Icon name="mic" size={44} />
+        </span>
+        <span className="tap-title">Tap anywhere to talk to Pay Alone</span>
+        <span className="tap-sub">The voice could not start by itself on this device.</span>
+      </button>
+    );
+
   return (
     <Home
       customer={state.customer}
@@ -417,6 +488,7 @@ export default function WalletPage() {
         savePref("appVoice", next.on ? "on" : "off");
         savePref("naturalVoice", next.natural ? "on" : "off");
         savePref("voiceAnswer", next.listen ? "on" : "off");
+        savePref("autoTalk", next.auto ? "on" : "off");
         savePref("lang", next.lang);
         if (!next.on) hosted.stop();
       }}
@@ -665,13 +737,8 @@ function Alerts({ say }: { say: (t: string) => void }) {
 
   if (status === "checking") return null;
   return (
-    <section className="card" aria-labelledby="alerts-h">
-      <h2 id="alerts-h">
-        <span className="card-icon">
-          <Icon name="bell" size={22} />
-        </span>
-        Lock-screen alerts
-      </h2>
+    <section aria-labelledby="alerts-h" style={{ marginTop: "1.2rem" }}>
+      <h2 id="alerts-h">Lock-screen alerts (test)</h2>
       {status === "on" && <p>On. A seller&apos;s request alerts this device even when it is locked. VoiceOver reads the alert; unlock with your fingerprint to answer.</p>}
       {status === "off" && <p>Hear a seller&apos;s request even when this device is locked. You still unlock with your fingerprint to pay.</p>}
       {status === "denied" && <p>Alerts are blocked for Pay Alone. Allow them in Settings, then Notifications, then Pay Alone.</p>}
@@ -1148,9 +1215,11 @@ function VoiceOrb({ session, mode }: { session: React.RefObject<LiveSession | nu
 
 // ---------- talking to Pay Alone ----------
 
-/** "Talk to Pay Alone" on the home screen: starts the one live conversation, any time. */
-function TalkCard({ live, say }: { live: Live; say: (t: string) => void }) {
+/** Top of the home screen: greeting, what is left to spend, and the one big "talk" button. */
+function HeroCard({ customer, live, say }: { customer: CustomerView; live: Live; say: (t: string) => void }) {
+  const cap = customer.cap && customer.cap.status === "active" ? customer.cap : null;
   const [note, setNote] = useState("");
+  const pct = cap ? Math.min(100, Number((BigInt(cap.spent.value) * BigInt(100)) / (BigInt(cap.limit.value) || BigInt(1)))) : 0;
   async function start() {
     setNote("");
     if (!(await live.start())) {
@@ -1160,12 +1229,32 @@ function TalkCard({ live, say }: { live: Live; say: (t: string) => void }) {
     }
   }
   return (
-    <section className="card assistant-card" aria-labelledby="assist-h">
-      <button className="wide assistant-start" onClick={() => void start()} disabled={Boolean(live.mode)}>
-        <Icon name="mic" size={26} />
-        <span id="assist-h">Talk to Pay Alone</span>
+    <section className="hero-card" aria-labelledby="hero-h">
+      <p className="hero-hello">Good to see you</p>
+      <h1 id="hero-h">{customer.name ? customer.name.replace(/^./, (c) => c.toUpperCase()) : "Your wallet"}</h1>
+      {cap ? (
+        <div className="hero-figure">
+          <span className="hero-label">Left to spend this {cap.every}</span>
+          <span className="hero-amount">{formatAmount(cap.left)}</span>
+          <span className="hero-bar" aria-hidden="true">
+            <span style={{ width: `${100 - pct}%` }} />
+          </span>
+          <span className="hero-small">
+            {formatAmount(cap.spent)} spent of {formatAmount(cap.limit)}
+          </span>
+        </div>
+      ) : (
+        <div className="hero-figure">
+          <span className="hero-label">No spending limit set yet</span>
+        </div>
+      )}
+      <button className="hero-talk" onClick={() => void start()} disabled={Boolean(live.mode)}>
+        <span className="hero-talk-icon">
+          <Icon name="mic" size={26} />
+        </span>
+        Talk to Pay Alone
       </button>
-      <p className="muted">Ask what is left of your limit or who you paid, or say who to send money to. Your fingerprint confirms every payment.</p>
+      <p className="hero-hint">Ask what is left, who you paid, or say who to send money to. Your fingerprint confirms every payment.</p>
       {note && <p role="status">{note}</p>}
     </section>
   );
@@ -1225,10 +1314,7 @@ function Home(props: {
     <>
       <AppBar role="Customer" />
       <main>
-        <h1>Hello{customer.name ? `, ${customer.name}` : ""}</h1>
-        <p className="muted">
-          Paying from {customer.walletAddress} in {customer.assetCode}.
-        </p>
+        <HeroCard customer={customer} live={live} say={say} />
 
         {notice && (
           <div className={`status ${notice.good ? "good" : "bad"}`} role="status" aria-live="polite">
@@ -1243,10 +1329,8 @@ function Home(props: {
         )}
         {props.loadError && <p role="alert">Cannot check for new requests: {props.loadError.message} Still trying.</p>}
 
-        <TalkCard live={live} say={say} />
         {live.mode && <LiveOverlay live={live} />}
 
-        <Alerts say={say} />
 
         <section className="card" aria-labelledby="code-h">
           <div className="paycode">
@@ -1308,6 +1392,15 @@ function Home(props: {
               your voice never moves money. Uses the microphone for a few seconds; the recording is not kept.
             </span>
           </label>
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={props.prefs.auto}
+              disabled={!props.prefs.on || !props.prefs.natural}
+              onChange={(e) => props.setPrefs({ ...props.prefs, auto: e.target.checked })}
+            />
+            <span>Start talking as soon as the app opens. Uses voice minutes each time; the call ends when you leave the app or stay quiet.</span>
+          </label>
           <label htmlFor="lang">Language for requests and results</label>
           <select
             id="lang"
@@ -1325,6 +1418,7 @@ function Home(props: {
             Amounts are always said in English, as most people say them. The Pidgin, Yoruba, Igbo and Hausa sentences have not yet been checked by a native
             speaker. Instructions are in English for now.
           </p>
+          <Alerts say={say} />
           <button
             className="secondary"
             onClick={async () => {
