@@ -74,6 +74,30 @@ class Player {
     this.sources = [];
     this.next = 0;
   }
+  /** The same happy "paid" sound as on the iPad. */
+  ding() {
+    const t0 = this.ctx.currentTime + 0.02;
+    const notes: [number, number, number][] = [
+      [784, 0, 0.35],
+      [988, 0.11, 0.35],
+      [1175, 0.22, 0.4],
+      [1568, 0.36, 0.9],
+      [2349, 0.36, 0.7],
+    ];
+    for (const [hz, at, len] of notes) {
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = "triangle";
+      osc.frequency.value = hz;
+      const peak = hz > 2000 ? 0.25 : 0.6;
+      gain.gain.setValueAtTime(0.0001, t0 + at);
+      gain.gain.exponentialRampToValueAtTime(peak, t0 + at + 0.012);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + at + len);
+      osc.connect(gain).connect(this.analyser);
+      osc.start(t0 + at);
+      osc.stop(t0 + at + len + 0.05);
+    }
+  }
   level(): number {
     this.analyser.getByteTimeDomainData(this.data);
     let sum = 0;
@@ -166,7 +190,7 @@ function Stage() {
       [4500, () => setSnap({ ...base, pending: req("quoted"), lines: (lines.push({ who: "you", text: "Yes, pay her." }), [...lines]) })],
       [5200, () => setPrompt({ id: "test", text: "To pay, rest your finger on the Home button. To refuse, do nothing." })],
       [7500, () => setSnap({ ...base, pending: req("paying"), lines: [...lines] })],
-      [8600, () => setSnap({ ...base, left: usd("2800"), pending: null, last: req("paid"), lines: [...lines] })],
+      [8600, () => (setSnap({ ...base, left: usd("2800"), pending: null, last: req("paid"), lines: [...lines] }), player.current?.ding())],
     ];
     setLastSeen(Date.now());
     const timers = steps.map(([ms, f]) => setTimeout(f, ms));
@@ -185,6 +209,7 @@ function Stage() {
         setLastSeen(Date.now());
         if (e === "audio") player.current?.play(String(p.b64 ?? ""), String(p.fmt ?? "pcm_16000"));
         else if (e === "flush") player.current?.flush();
+        else if (e === "ding") player.current?.ding();
         else if (e === "level") micLevel.current = Number(p.v) || 0;
         else if (e === "mode") {
           modeRef.current = (p.mode as Mode) ?? "";

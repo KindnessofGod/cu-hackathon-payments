@@ -267,6 +267,46 @@ export function chime(): void {
   }
 }
 
+/** A short, happy "paid" sound: a rising major arpeggio with a sparkle on top (about 1.2 s). */
+export function successChime(): void {
+  try {
+    const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    const ctx = new Ctx();
+    void ctx.resume();
+    const comp = ctx.createDynamicsCompressor();
+    comp.threshold.value = -8;
+    comp.ratio.value = 10;
+    comp.connect(ctx.destination);
+    const t0 = ctx.currentTime + 0.02;
+    const notes: [number, number, number][] = [
+      [784, 0, 0.35], // G5
+      [988, 0.11, 0.35], // B5
+      [1175, 0.22, 0.4], // D6
+      [1568, 0.36, 0.9], // G6, held
+      [2349, 0.36, 0.7], // sparkle
+    ];
+    for (const [hz, at, len] of notes) {
+      for (const type of ["triangle", "sine"] as const) {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = type;
+        osc.frequency.value = hz;
+        const peak = (type === "triangle" ? 0.7 : 0.35) * (hz > 2000 ? 0.4 : 1);
+        gain.gain.setValueAtTime(0.0001, t0 + at);
+        gain.gain.exponentialRampToValueAtTime(peak, t0 + at + 0.012);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t0 + at + len);
+        osc.connect(gain).connect(comp);
+        osc.start(t0 + at);
+        osc.stop(t0 + at + len + 0.05);
+      }
+    }
+    setTimeout(() => void ctx.close(), 1600);
+  } catch {
+    // no sound possible here
+  }
+  stageSend("ding", {});
+}
+
 /**
  * Safari may hold back the agent's audio when the conversation started without a tap (the app
  * opened it by itself). Any tap anywhere calls this: it resumes sound and plays held-back audio.

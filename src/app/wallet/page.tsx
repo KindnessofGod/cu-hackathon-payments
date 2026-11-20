@@ -10,7 +10,7 @@ import { inNativeApp, nativeCreateKey, nativeSign } from "@/lib/native";
 import { canListen, recordAnswer } from "@/lib/listen";
 import type { Intent } from "@/lib/voice/intent";
 import { LIVE_KEY, stageBrief, stageOpen, stageSend, stageStatus } from "@/lib/stage";
-import { nudgeAudio, report, stageMode, startLive, type LiveMode, type LiveSession } from "@/lib/liveVoice";
+import { nudgeAudio, report, stageMode, startLive, successChime, type LiveMode, type LiveSession } from "@/lib/liveVoice";
 import { GlassOrb } from "@/components/GlassOrb";
 import { canWake, startWake } from "@/lib/wake";
 import { createAvatar } from "@dicebear/core";
@@ -1139,6 +1139,7 @@ function Approve({
 
   /** Finishes a payment or refusal. In a live conversation the agent tells the result. */
   async function done(r: RequestView) {
+    if (r.status === "paid") successChime(); // a happy sound the moment it is paid (also in the studio)
     if (!liveOn.current) return onDone(r);
     const paid = r.status === "paid" && r.paid;
     const left = paid ? await live.leftNow() : "";
