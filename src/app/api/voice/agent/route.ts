@@ -88,7 +88,7 @@ export async function GET(req: Request) {
         r.purpose === "save"
           ? "The customer is moving money INTO THEIR OWN SAVINGS wallet (they asked for this)."
           : r.purpose === "invest" && r.invest
-            ? `The customer is making a PRACTICE investment in ${r.invest.name} with test money (they asked for this); it records about ${(Number(r.invest.unitsMicro) / 1e6).toFixed(4)} shares at ${(Number(r.invest.priceMinor) / 100).toFixed(2)} dollars each.`
+            ? `The customer is making a PRACTICE investment in ${r.invest.name} with test money (they asked for this); it records about ${(Number(r.invest.unitsMicro) / 1e6).toFixed(4)} shares at ${(Number(r.invest.priceMinor) / 100).toFixed(2)} ${r.invest.currency === "NGN" ? "naira" : "dollars"} each.`
             : r.outgoing
               ? `The customer is SENDING money to ${r.merchantName} (they asked for this).`
               : `${r.merchantName} is ASKING the customer for money.`,

@@ -104,7 +104,7 @@ export interface PaymentRequest {
   /** Money the customer moves to grow it: into their savings wallet, or into the practice investment wallet. */
   purpose?: "save" | "invest";
   /** For a practice investment: the share and the live price it was bought at (cents), and the shares in millionths. */
-  invest?: { symbol: string; name: string; priceMinor: string; unitsMicro: string };
+  invest?: { symbol: string; name: string; priceMinor: string; unitsMicro: string; currency?: "NGN" | "USD" };
 }
 
 interface GrantSession {

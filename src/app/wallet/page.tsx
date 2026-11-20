@@ -2040,15 +2040,15 @@ function Meter({ spent, limit }: { spent: Amount; limit: Amount }) {
 type GrowView = {
   saved: Amount | null;
   holdings: { symbol: string; name: string; shares: string; cost: Amount; value: Amount | null }[];
-  market: { symbol: string; name: string; about: string; priceMinor: string; changeMonthBp: number; asOf: string }[];
+  market: { symbol: string; name: string; about: string; market: "NGX" | "US"; currency: "NGN" | "USD"; priceMinor: string; changeMonthBp: number | null; asOf: string; source: string }[];
   savingsReady: boolean;
   investReady: boolean;
 };
-const dollars = (cents: string) => (Number(cents) / 100).toFixed(2);
+const priceOf = (q: GrowView["market"][number]) => (Number(q.priceMinor) / 100).toLocaleString("en-US", { maximumFractionDigits: 2 });
+const changeOf = (q: GrowView["market"][number]) =>
+  q.changeMonthBp === null ? "" : `${q.changeMonthBp >= 0 ? "up" : "down"} ${Math.abs(q.changeMonthBp / 100).toFixed(1)} percent this month`;
 function marketLine(m: GrowView["market"]) {
-  return m
-    .map((q) => `${q.name} (${q.about}): ${dollars(q.priceMinor)} dollars a share, ${q.changeMonthBp >= 0 ? "up" : "down"} ${Math.abs(q.changeMonthBp / 100).toFixed(1)} percent this month`)
-    .join("; ");
+  return m.map((q) => `${q.name} (${q.about}): ${priceOf(q)} ${q.currency === "NGN" ? "naira" : "dollars"} a share${changeOf(q) ? ", " + changeOf(q) : ""}`).join("; ");
 }
 function growLine(g: GrowView) {
   const s = g.saved ? `Saved so far: ${speakAmount(g.saved)}.` : "Nothing saved yet.";
@@ -2116,26 +2116,35 @@ function GrowSheet({ say, onStarted, onClose }: { say: (t: string) => void; onSt
             ) : (
               <p>None yet.</p>
             )}
-            <h3>Live share prices</h3>
-            <p style={{ fontSize: 13 }}>From Yahoo Finance, delayed. Past changes do not predict the future. Naira {"at the CBN rate of 16 Nov (₦1,353.97 per $1)"}; the test network runs in dollars.</p>
-            <ul style={{ listStyle: "none", padding: 0 }}>
-              {g.market.map((q) => (
-                <li key={q.symbol} style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", padding: "6px 0", borderBottom: "1px solid #0001" }}>
-                  <span>
-                    <b>{q.name}</b> · ${dollars(q.priceMinor)} (≈ ₦{nairaOf({ value: q.priceMinor, assetCode: "USD", assetScale: 2 })}) · {q.changeMonthBp >= 0 ? "▲" : "▼"} {Math.abs(q.changeMonthBp / 100).toFixed(1)}% this month
-                    <br />
-                    <small>{q.about}</small>
-                  </span>
-                  <button
-                    className="safe-btn"
-                    disabled={Boolean(busy) || !g.investReady}
-                    onClick={() => void start({ action: "invest", share: q.symbol, amount: "1" }, `Practice investing 1 dollar in ${q.name}`)}
-                  >
-                    Invest $1 (≈ ₦1,354)
-                  </button>
-                </li>
-              ))}
-            </ul>
+            {(["NGX", "US"] as const).map((mk) => (
+              <div key={mk}>
+                <h3>{mk === "NGX" ? "Nigerian Exchange (NGX)" : "US shares"}</h3>
+                <p style={{ fontSize: 13 }}>
+                  {mk === "NGX" ? "Daily prices from NGX; one-month change from TradingView." : "From Yahoo Finance, delayed; naira at the CBN rate of 16 Nov (₦1,353.97 per $1)."} Past changes do not predict the future.
+                </p>
+                <ul style={{ listStyle: "none", padding: 0 }}>
+                  {g.market
+                    .filter((q) => q.market === mk)
+                    .map((q) => (
+                      <li key={q.symbol} style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", padding: "6px 0", borderBottom: "1px solid #0001" }}>
+                        <span>
+                          <b>{q.name}</b> · {q.currency === "NGN" ? `₦${priceOf(q)}` : `$${priceOf(q)} (≈ ₦${nairaOf({ value: q.priceMinor, assetCode: "USD", assetScale: 2 })})`}
+                          {q.changeMonthBp !== null && ` · ${q.changeMonthBp >= 0 ? "▲" : "▼"} ${Math.abs(q.changeMonthBp / 100).toFixed(1)}% this month`}
+                          <br />
+                          <small>{q.about}</small>
+                        </span>
+                        <button
+                          className="safe-btn"
+                          disabled={Boolean(busy) || !g.investReady}
+                          onClick={() => void start({ action: "invest", share: q.symbol, amount: "1" }, `Practice investing 1 dollar, about 1,354 naira, in ${q.name}`)}
+                        >
+                          Invest ₦1,354 ($1)
+                        </button>
+                      </li>
+                    ))}
+                </ul>
+              </div>
+            ))}
             <p>
               <button className="safe-btn" onClick={() => say(`${growLine(g)} Live prices: ${marketLine(g.market)}. These are facts, not advice.`)}>
                 Read it aloud
