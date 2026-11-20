@@ -388,7 +388,25 @@ export default function WalletPage() {
   const prepared = useCallback(
     async (start: () => Promise<{ id: string; to: string; naira?: string }>): Promise<string> => {
       try {
-        const res = await start();
+        // A brief drop in the iPad's connection should not lose the request: try up to three times.
+        // Safe to repeat: if an earlier try did reach the server, the repeat is refused as "already waiting".
+        let res: { id: string; to: string; naira?: string } | null = null;
+        for (let attempt = 0; !res; attempt++) {
+          try {
+            res = await start();
+          } catch (e) {
+            // An earlier try did get through: the waiting payment is the one just asked for.
+            if (attempt > 0 && /already waiting/.test(errorText(e).message)) {
+              const p = (await refresh())?.pending;
+              if (p?.outgoing) {
+                res = { id: p.id, to: p.merchantName };
+                break;
+              }
+            }
+            if (errorText(e).kind !== "offline" || attempt >= 2) throw e;
+            await new Promise((w) => setTimeout(w, 1200 * (attempt + 1)));
+          }
+        }
         const said = res.naira ? `The customer asked for ${res.naira} naira; the test wallet runs in dollars, so it is sent as its dollar value at the CBN rate. Say it as ${res.naira} naira, and also give the dollar amount. ` : "";
         sentByVoice.current = res.id;
         liveFor.current = res.id;
