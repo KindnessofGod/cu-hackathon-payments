@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { GlassOrb } from "@/components/GlassOrb";
 import { formatAmount, nairaOf, type Amount } from "@/lib/money";
-import { stageListen, type StageEvent } from "@/lib/stage";
+import { LIVE_KEY, stageListen, type StageEvent } from "@/lib/stage";
 
 type Brief = { id: string; merchantName: string; outgoing: boolean; status: string; amount: Amount; receive: Amount | null } | null;
 type Snap = {
@@ -145,7 +145,7 @@ function Stage() {
   const modeRef = useRef<Mode>("");
 
   useEffect(() => {
-    setKey(new URLSearchParams(window.location.search).get("k") ?? "");
+    setKey(new URLSearchParams(window.location.search).get("k") || LIVE_KEY);
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
   }, []);

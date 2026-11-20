@@ -16,28 +16,33 @@ function sb(): SupabaseClient | null {
 
 export type StageEvent = "snap" | "mode" | "lines" | "audio" | "flush" | "level" | "prompt";
 
-let out: { key: string; chan: RealtimeChannel; ready: boolean } | null = null;
+/** The one studio channel: payalone.vercel.app/stage always shows the device that is in stage mode. */
+export const LIVE_KEY = "live";
 
-/** Opens the sending side (customer device). */
-export function stageOpen(key: string): void {
+let out: { key: string; chan: RealtimeChannel; ready: boolean; status: string } | null = null;
+
+/** Opens the sending side (customer device in stage mode). */
+export function stageOpen(key = LIVE_KEY, onError?: (why: string) => void): void {
   if (out?.key === key) return;
   const c = sb();
-  if (!c) return;
+  if (!c) {
+    onError?.("studio feed not configured");
+    return;
+  }
   if (out) void c.removeChannel(out.chan);
   const chan = c.channel(`stage-${key}`, { config: { broadcast: { self: false, ack: false } } });
-  const me = { key, chan, ready: false };
+  const me = { key, chan, ready: false, status: "connecting" };
   out = me;
-  chan.subscribe((s) => {
+  chan.subscribe((s, err) => {
     me.ready = s === "SUBSCRIBED";
+    me.status = s;
+    if (s === "CHANNEL_ERROR" || s === "TIMED_OUT") onError?.(`${s} ${err?.message ?? ""}`);
   });
 }
 
-export function stageKeyNow(): string {
-  return out?.key ?? "";
-}
-
-export function stageOn(): boolean {
-  return Boolean(out?.ready);
+/** "SUBSCRIBED" when the studio feed is being sent; "" when stage mode never opened it. */
+export function stageStatus(): string {
+  return out?.status ?? "";
 }
 
 /** Sends one event to the studio; does nothing when stage mode is off or not connected. */
