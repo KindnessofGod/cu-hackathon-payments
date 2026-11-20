@@ -1,6 +1,7 @@
 import { capSummary, customerHistory, getRequestFor, isOpen, payeesOf } from "@/lib/domain";
 import { fail, requireCustomer } from "@/lib/http";
 import { exceedsCap, remainingOfCap, speakAmount } from "@/lib/money";
+import { growSummary, growText } from "@/lib/grow";
 import { askingSentence, isLang, type Lang } from "@/lib/voice/sentences";
 import { AGENT_LANG, agentSignedUrl, agentToken } from "@/lib/voice/agentToken";
 
@@ -59,6 +60,12 @@ export async function GET(req: Request) {
       const c = customer.contacts[p.walletId];
       return c ? `${p.name} (paid ${c.paidCount} time${c.paidCount === 1 ? "" : "s"}, last on ${when(c.lastPaidAt)})` : `${p.name} (never paid; asked for money in the last day)`;
     });
+    let grow = "not available right now";
+    try {
+      grow = growText(await growSummary(customer));
+    } catch {
+      /* keep the call going without it */
+    }
     const hasDevice = Boolean(customer.deviceKeys?.length);
     const hasPasskey = Boolean(customer.passkeys?.length);
     const approveHow =
@@ -78,7 +85,13 @@ export async function GET(req: Request) {
       const over = Boolean(active && exceedsCap(active.limit, active.spent, debitAmount));
       const timesPaid = customer.contacts[r.merchantWalletId]?.paidCount ?? 0;
       pending = [
-        r.outgoing ? `The customer is SENDING money to ${r.merchantName} (they asked for this).` : `${r.merchantName} is ASKING the customer for money.`,
+        r.purpose === "save"
+          ? "The customer is moving money INTO THEIR OWN SAVINGS wallet (they asked for this)."
+          : r.purpose === "invest" && r.invest
+            ? `The customer is making a PRACTICE investment in ${r.invest.name} with test money (they asked for this); it records about ${(Number(r.invest.unitsMicro) / 1e6).toFixed(4)} shares at ${(Number(r.invest.priceMinor) / 100).toFixed(2)} dollars each.`
+            : r.outgoing
+              ? `The customer is SENDING money to ${r.merchantName} (they asked for this).`
+              : `${r.merchantName} is ASKING the customer for money.`,
         `${r.merchantName} will receive ${speakAmount(receiveAmount)}.`,
         `${speakAmount(debitAmount)} will leave the customer's account, fees included.`,
         `Times paid this person before: ${timesPaid}.`,
@@ -110,6 +123,7 @@ export async function GET(req: Request) {
           history_text: history.length ? history.join("\n") : "- nothing yet",
           pending_text: pending,
           approve_how: approveHow,
+          grow_text: grow,
         },
       },
       { headers: { "cache-control": "no-store" } },

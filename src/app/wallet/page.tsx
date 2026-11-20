@@ -361,6 +361,33 @@ export default function WalletPage() {
     return "not paid: no payment is waiting right now. Nothing was paid.";
   };
 
+  // Starts a payment the customer asked for by voice and waits for the wallet's quote. Never pays.
+  const prepared = useCallback(
+    async (start: () => Promise<{ id: string; to: string }>): Promise<string> => {
+      try {
+        const res = await start();
+        sentByVoice.current = res.id;
+        liveFor.current = res.id;
+        for (let i = 0; i < 25; i++) {
+          const st = await refresh();
+          const r = st?.pending;
+          if (r && r.id === res.id && r.debitAmount && r.receiveAmount) {
+            const consent = r.needsWalletConsent ? " There is no spending limit, so after the fingerprint the wallet will open its own page to confirm." : "";
+            return `ready, not paid yet: ${r.merchantName} will receive ${speakAmount(r.receiveAmount)}. ${speakAmount(r.debitAmount)} will leave the customer's account, fees included.${consent} Ask the customer if they want to pay.`;
+          }
+          if (!r || r.id !== res.id) {
+            if (st?.last?.id === res.id) return `could not prepare: ${st.last.failure?.message ?? "the wallet did not accept it"}. Nothing was paid.`;
+          }
+          await new Promise((w) => setTimeout(w, 1000));
+        }
+        return "not ready: the wallet did not give the exact amount in time. Nothing was paid.";
+      } catch (e) {
+        return `could not prepare: ${errorText(e).message} Nothing was paid.`;
+      }
+    },
+    [refresh],
+  );
+
   const startLiveVoice = useCallback(
     async (requestId?: string): Promise<boolean> => {
       if (liveActive.current) return true;
@@ -397,26 +424,29 @@ export default function WalletPage() {
             },
             approve_payment: () => liveHandlers.current.approve?.() ?? Promise.resolve(nothingWaiting()),
             refuse_payment: () => liveHandlers.current.refuse?.() ?? Promise.resolve("nothing to refuse: no payment is waiting right now."),
-            send_money: async (p) => {
+            send_money: async (p) => prepared(() => api<{ id: string; to: string }>("/api/wallet/send", { method: "POST", body: { to: String(p.to ?? ""), amount: String(p.amount ?? "") } })),
+            save_money: async (p) =>
+              prepared(() => api<{ id: string; to: string }>("/api/wallet/grow", { method: "POST", body: { action: "save", amount: String(p.amount ?? "") } })),
+            invest_practice: async (p) =>
+              prepared(() =>
+                api<{ id: string; to: string }>("/api/wallet/grow", { method: "POST", body: { action: "invest", share: String(p.share ?? ""), amount: String(p.amount ?? "") } }),
+              ),
+            market_overview: async () => {
               try {
-                const res = await api<{ id: string; to: string }>("/api/wallet/send", { method: "POST", body: { to: String(p.to ?? ""), amount: String(p.amount ?? "") } });
-                sentByVoice.current = res.id;
-                liveFor.current = res.id;
-                for (let i = 0; i < 25; i++) {
-                  const st = await refresh();
-                  const r = st?.pending;
-                  if (r && r.id === res.id && r.debitAmount && r.receiveAmount) {
-                    const consent = r.needsWalletConsent ? " There is no spending limit, so after the fingerprint the wallet will open its own page to confirm." : "";
-                    return `ready, not paid yet: ${r.merchantName} will receive ${speakAmount(r.receiveAmount)}. ${speakAmount(r.debitAmount)} will leave the customer's account, fees included.${consent} Ask the customer if they want to pay.`;
-                  }
-                  if (!r || r.id !== res.id) {
-                    if (st?.last?.id === res.id) return `could not prepare: ${st.last.failure?.message ?? "the wallet did not accept it"}. Nothing was paid.`;
-                  }
-                  await new Promise((w) => setTimeout(w, 1000));
-                }
-                return "not ready: the wallet did not give the exact amount in time. Nothing was paid.";
+                const g = await api<GrowView>("/api/wallet/grow");
+                window.dispatchEvent(new Event("payalone:show-grow"));
+                return `live prices (facts, not advice): ${marketLine(g.market)}. ${growLine(g)}`;
               } catch (e) {
-                return `could not prepare: ${errorText(e).message} Nothing was paid.`;
+                return `prices not available: ${errorText(e).message}`;
+              }
+            },
+            my_savings_and_investments: async () => {
+              try {
+                const g = await api<GrowView>("/api/wallet/grow");
+                window.dispatchEvent(new Event("payalone:show-grow"));
+                return growLine(g);
+              } catch (e) {
+                return `not available: ${errorText(e).message}`;
               }
             },
           },
@@ -430,7 +460,7 @@ export default function WalletPage() {
         return false;
       }
     },
-    [prefs.lang, refresh, setLiveMode],
+    [prefs.lang, refresh, setLiveMode, prepared],
   );
 
   const live: Live = {
@@ -1498,6 +1528,12 @@ function Home(props: {
   };
   const today = new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" });
   const [showCode, setShowCode] = useState(false);
+  const [showGrow, setShowGrow] = useState(false);
+  useEffect(() => {
+    const openGrow = () => setShowGrow(true);
+    window.addEventListener("payalone:show-grow", openGrow);
+    return () => window.removeEventListener("payalone:show-grow", openGrow);
+  }, []);
   useEffect(() => {
     const open = () => setShowCode(true);
     window.addEventListener("payalone:show-code", open);
@@ -1713,6 +1749,15 @@ function Home(props: {
               <span>Pay code {customer.payCode.replace(/(\d{3})(\d{3})/, "$1 $2")} · set it as lock screen</span>
             </span>
           </button>
+          <button className="safe safe-btn" onClick={() => setShowGrow(true)}>
+            <span className="safe-ic">
+              <Icon name="home" />
+            </span>
+            <span>
+              <b>Save and invest</b>
+              <span>Grow your money · live share prices · practice investing</span>
+            </span>
+          </button>
         </section>
 
         <section className="card" aria-labelledby="code-h" id="code">
@@ -1833,6 +1878,7 @@ function Home(props: {
 
       <VoicePanel live={live} onTalk={() => void talk()} name={name} />
       {showCode && <PayCodeSheet payCode={customer.payCode} say={say} onClose={() => setShowCode(false)} />}
+      {showGrow && <GrowSheet say={say} onStarted={() => { setShowGrow(false); props.refresh(); }} onClose={() => setShowGrow(false)} />}
       {live.mode && <LiveOverlay live={live} />}
     </div>
   );
@@ -1980,6 +2026,118 @@ function Meter({ spent, limit }: { spent: Amount; limit: Amount }) {
 
 /** Makes a picture with the pay code low on the screen, to set as the lock-screen wallpaper. */
 /** The pay code as a large QR, and setting it as the lock screen (once, with an Apple Shortcut). */
+type GrowView = {
+  saved: Amount | null;
+  holdings: { symbol: string; name: string; shares: string; cost: Amount; value: Amount | null }[];
+  market: { symbol: string; name: string; about: string; priceMinor: string; changeMonthBp: number; asOf: string }[];
+  savingsReady: boolean;
+  investReady: boolean;
+};
+const dollars = (cents: string) => (Number(cents) / 100).toFixed(2);
+function marketLine(m: GrowView["market"]) {
+  return m
+    .map((q) => `${q.name} (${q.about}): ${dollars(q.priceMinor)} dollars a share, ${q.changeMonthBp >= 0 ? "up" : "down"} ${Math.abs(q.changeMonthBp / 100).toFixed(1)} percent this month`)
+    .join("; ");
+}
+function growLine(g: GrowView) {
+  const s = g.saved ? `Saved so far: ${speakAmount(g.saved)}.` : "Nothing saved yet.";
+  const h = g.holdings.length
+    ? " Practice investments: " + g.holdings.map((x) => `${x.name}, ${x.shares} shares, cost ${speakAmount(x.cost)}${x.value ? `, worth ${speakAmount(x.value)} now` : ""}`).join("; ") + "."
+    : " No practice investments yet.";
+  return s + h;
+}
+
+function GrowSheet({ say, onStarted, onClose }: { say: (t: string) => void; onStarted: () => void; onClose: () => void }) {
+  const [g, setG] = useState<GrowView | null>(null);
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState("");
+  useEffect(() => {
+    void api<GrowView>("/api/wallet/grow")
+      .then(setG)
+      .catch((e) => setErr(errorText(e).message));
+  }, []);
+  async function start(body: Record<string, string>, label: string) {
+    setBusy(label);
+    setErr("");
+    try {
+      await api("/api/wallet/grow", { method: "POST", body });
+      say(`${label}. Your wallet is getting the exact amount. Then approve it with your fingerprint.`);
+      onStarted();
+    } catch (e) {
+      setErr(errorText(e).message);
+      say(errorText(e).message);
+    } finally {
+      setBusy("");
+    }
+  }
+  return (
+    <div className="sheet-back" role="dialog" aria-modal="true" aria-labelledby="grow-h" onClick={onClose}>
+      <div className="sheet" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 640, maxHeight: "90vh", overflow: "auto" }}>
+        <h2 id="grow-h">Save and invest</h2>
+        <p>Real test money moves with Open Payments, approved by your fingerprint. Investing is <b>practice</b>: live prices, no real shares, not financial advice.</p>
+        {err && <p role="alert">{err}</p>}
+        {!g && !err && <p>Loading…</p>}
+        {g && (
+          <>
+            <h3>Savings</h3>
+            <p>{g.saved ? <>Saved so far: <b>{formatAmount(g.saved)}</b></> : "Nothing saved yet."}</p>
+            {g.savingsReady ? (
+              <p style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {["1", "2", "5"].map((a) => (
+                  <button key={a} className="safe-btn" disabled={Boolean(busy)} onClick={() => void start({ action: "save", amount: a }, `Saving ${a} dollars`)}>
+                    Save ${a}
+                  </button>
+                ))}
+              </p>
+            ) : (
+              <p>The savings wallet is not set up yet.</p>
+            )}
+            <h3>Practice investments</h3>
+            {g.holdings.length ? (
+              <ul>
+                {g.holdings.map((h) => (
+                  <li key={h.symbol}>
+                    {h.name}: {h.shares} shares · cost {formatAmount(h.cost)}
+                    {h.value ? ` · worth ${formatAmount(h.value)} now` : ""}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p>None yet.</p>
+            )}
+            <h3>Live share prices</h3>
+            <p style={{ fontSize: 13 }}>From Yahoo Finance, delayed. Past changes do not predict the future.</p>
+            <ul style={{ listStyle: "none", padding: 0 }}>
+              {g.market.map((q) => (
+                <li key={q.symbol} style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", padding: "6px 0", borderBottom: "1px solid #0001" }}>
+                  <span>
+                    <b>{q.name}</b> · ${dollars(q.priceMinor)} · {q.changeMonthBp >= 0 ? "▲" : "▼"} {Math.abs(q.changeMonthBp / 100).toFixed(1)}% this month
+                    <br />
+                    <small>{q.about}</small>
+                  </span>
+                  <button
+                    className="safe-btn"
+                    disabled={Boolean(busy) || !g.investReady}
+                    onClick={() => void start({ action: "invest", share: q.symbol, amount: "1" }, `Practice investing 1 dollar in ${q.name}`)}
+                  >
+                    Invest $1
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <p>
+              <button className="safe-btn" onClick={() => say(`${growLine(g)} Live prices: ${marketLine(g.market)}. These are facts, not advice.`)}>
+                Read it aloud
+              </button>
+            </p>
+          </>
+        )}
+        <button className="safe-btn" onClick={onClose}>Close</button>
+      </div>
+    </div>
+  );
+}
+
 function PayCodeSheet({ payCode, say, onClose }: { payCode: string; say: (t: string) => void; onClose: () => void }) {
   const digits = payCode.split("").join(" ");
   const [link, setLink] = useState("");
