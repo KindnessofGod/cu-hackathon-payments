@@ -986,6 +986,7 @@ function Approve({
   const liveOn = live.active;
   const toolWait = useRef<((s: string) => void) | null>(null);
   const toolText = useRef("");
+  const voiceDown = useRef(false); // the voice could not start here; taps go straight to paying
   const armedRef = useRef(false);
   armedRef.current = armed;
   const ready = Boolean(request.challenge && request.debitAmount);
@@ -1083,15 +1084,14 @@ function Approve({
   }
 
   /** The live conversation: natural voice, the customer can interrupt, the agent answers questions. */
-  async function talk_(): Promise<void> {
-    if (liveOn.current || busy || !ready) return;
+  async function talk_(): Promise<boolean> {
+    if (liveOn.current || busy || !ready) return true;
     setMessage("Connecting the voice…");
     if (await live.start(request.id)) {
       setMessage("Talk naturally. Ask who is asking, how much is left, or say pay or no.");
-      return;
+      return true;
     }
-    // The live voice could not start: use the simpler voice answers instead.
-    void askByVoice();
+    return false;
   }
 
   /** Speaks one of the server's sentences in the chosen language (device English voice as fallback). */
@@ -1182,9 +1182,15 @@ function Approve({
     // A tap during a live conversation only matters once the agent has asked for the fingerprint.
     if (!spoken && quiet && !armedRef.current) return "";
     // First tap with voice answers on: start talking. A tap while armed goes straight on.
-    if (!spoken && !armed && voiceAnswers) {
-      if (prefs.natural) await talk_();
-      else await askByVoice();
+    // If the voice is not available on this device (no microphone, voice service down), taps pay instead.
+    if (!spoken && !armed && voiceAnswers && !voiceDown.current) {
+      if (prefs.natural ? await talk_() : await askByVoice().then(() => true, () => false)) return "";
+      voiceDown.current = true;
+      const text = needsFinger
+        ? "The voice is not available right now. Tap again, then rest your finger on the Home button to pay. To refuse, do nothing."
+        : "The voice is not available right now. Tap again to pay. To refuse, do nothing.";
+      setMessage(text);
+      say(text);
       return "";
     }
     let proof: { method: "confirm-button" | "passkey" | "device-key"; challenge?: string; response?: unknown; signature?: string } = {
