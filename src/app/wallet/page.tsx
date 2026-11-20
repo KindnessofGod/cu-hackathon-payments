@@ -9,7 +9,7 @@ import { startAuthentication, startRegistration } from "@simplewebauthn/browser"
 import { inNativeApp, nativeCreateKey, nativeSign } from "@/lib/native";
 import { canListen, recordAnswer } from "@/lib/listen";
 import type { Intent } from "@/lib/voice/intent";
-import { nudgeAudio, report, startLive, type LiveMode, type LiveSession } from "@/lib/liveVoice";
+import { nudgeAudio, report, stageMode, startLive, type LiveMode, type LiveSession } from "@/lib/liveVoice";
 import { GlassOrb } from "@/components/GlassOrb";
 import { canWake, startWake } from "@/lib/wake";
 import { createAvatar } from "@dicebear/core";
@@ -1432,6 +1432,8 @@ function liveLabel(mode: LiveMode | "", standby = false) {
 
 /** The voice, in one lit panel: the glass orb, what was said, and the mic. Always on the side on iPad. */
 function VoiceStage({ live, onTalk, name, full = false }: { live: Live; onTalk: () => void; name?: string; full?: boolean }) {
+  const [stageOn, setStageOn] = useState(false);
+  useEffect(() => setStageOn(stageMode()), []);
   const on = Boolean(live.mode);
   const lines = on ? live.lines.slice(-3) : [];
   return (
@@ -1439,7 +1441,8 @@ function VoiceStage({ live, onTalk, name, full = false }: { live: Live; onTalk: 
       <header className="vp-top">
         <span>
           <b>Pay Alone</b>
-          <span className={`vp-status ${live.mode}`}>{live.mode === "speaking" ? "Speaking" : live.mode === "listening" ? "Listening" : live.mode === "connecting" ? "Connecting" : live.standby ? "Waiting for “hello”" : "Ready"}</span>
+          <span className={`vp-status ${live.mode}`}>{live.mode === "speaking" ? "Speaking" : live.mode === "listening" ? "Listening" : live.mode === "connecting" ? "Connecting" : live.standby ? "Waiting for “hello”" : "Ready"}
+            {stageOn ? " · Stage mode" : ""}</span>
         </span>
         {on && (
           <button className="round dark" onClick={live.end} aria-label="End conversation">

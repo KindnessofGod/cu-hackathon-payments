@@ -93,6 +93,21 @@ function withTimeout<T>(p: Promise<T>, ms: number, onLate: (v: T) => void): Prom
   });
 }
 
+/** How long the microphone stays off after Pay Alone stops speaking, in stage mode (hall delay plus echo). */
+const STAGE_TAIL_MS = 1500;
+
+/** Stage mode is switched on with /wallet?stage=1 and off with ?stage=0; this device remembers it. */
+export function stageMode(): boolean {
+  try {
+    const q = new URLSearchParams(window.location.search).get("stage");
+    if (q === "1") localStorage.setItem("payalone-stage", "1");
+    if (q === "0") localStorage.removeItem("payalone-stage");
+    return localStorage.getItem("payalone-stage") === "1";
+  } catch {
+    return false;
+  }
+}
+
 async function open(
   o: LiveOptions,
   s: Start,
@@ -110,6 +125,20 @@ async function open(
       return result;
     };
   }
+  // Stage mode (big speakers): the microphone is off while Pay Alone speaks and for a moment after,
+  // so the hall's delayed copy of its voice is never heard as the customer talking.
+  const stage = stageMode();
+  const gate = {
+    conv: null as VoiceConversation | null,
+    mode: "listening" as "speaking" | "listening",
+    timer: undefined as ReturnType<typeof setTimeout> | undefined,
+    apply() {
+      if (!stage || !gate.conv) return;
+      clearTimeout(gate.timer);
+      if (gate.mode === "speaking") gate.conv.setMicMuted(true);
+      else gate.timer = setTimeout(() => gate.conv?.setMicMuted(false), STAGE_TAIL_MS);
+    },
+  };
   const common = {
     onConnect: ({ conversationId }: { conversationId: string }) => log.setId(conversationId),
     textOnly: false,
@@ -117,7 +146,11 @@ async function open(
     // The opening sentence comes from the first_message dynamic variable; only the language is overridden.
     overrides: { agent: { language: s.language as never } },
     clientTools: tools,
-    onModeChange: ({ mode }: { mode: "speaking" | "listening" }) => o.onMode(mode),
+    onModeChange: ({ mode }: { mode: "speaking" | "listening" }) => {
+      o.onMode(mode);
+      gate.mode = mode;
+      gate.apply();
+    },
     onMessage: (m: { message: string; role: "user" | "agent" }) => {
       // Tone tags such as [happy] shape the voice; they are not shown as words.
       const text = m.role === "agent" ? stripAudioTags(m.message ?? "").replace(/\s{2,}/g, " ").trim() : (m.message ?? "");
@@ -137,7 +170,10 @@ async function open(
       ? Conversation.startSession({ ...common, conversationToken: s.token!, connectionType: "webrtc" })
       : Conversation.startSession({ ...common, signedUrl: s.signedUrl!, connectionType: "websocket" });
   // A late connection after we gave up is closed at once.
-  return (await withTimeout(start, via === "webrtc" ? 9000 : 12000, (late) => void late.endSession())) as VoiceConversation;
+  const conv = (await withTimeout(start, via === "webrtc" ? 9000 : 12000, (late) => void late.endSession())) as VoiceConversation;
+  gate.conv = conv;
+  gate.apply();
+  return conv;
 }
 
 /** iPad Safari only lets a page use sound and the microphone from a tap: unlock both right away. */
