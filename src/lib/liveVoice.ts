@@ -160,6 +160,34 @@ function unlockAudio(): Promise<MediaStream | null> {
   }) ?? Promise.resolve(null);
 }
 
+/** Two rising notes (about half a second), made in the browser: no file to load. */
+export function chime(): void {
+  try {
+    const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    const ctx = new Ctx();
+    void ctx.resume();
+    const t0 = ctx.currentTime + 0.02;
+    [
+      [660, 0],
+      [990, 0.16],
+    ].forEach(([hz, at]) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.value = hz;
+      gain.gain.setValueAtTime(0.0001, t0 + at);
+      gain.gain.exponentialRampToValueAtTime(0.35, t0 + at + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + at + 0.32);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(t0 + at);
+      osc.stop(t0 + at + 0.34);
+    });
+    setTimeout(() => void ctx.close(), 900);
+  } catch {
+    // no sound possible here
+  }
+}
+
 /**
  * Safari may hold back the agent's audio when the conversation started without a tap (the app
  * opened it by itself). Any tap anywhere calls this: it resumes sound and plays held-back audio.
@@ -180,8 +208,11 @@ export async function startLive(o: LiveOptions): Promise<LiveSession> {
   o.onMode("connecting");
   const mic = unlockAudio(); // must start before any await, while the tap still counts
   const stream = await mic;
-  stream?.getTracks().forEach((t) => t.stop()); // permission is granted now; the SDK opens its own
   if (!stream) throw new Error("microphone not allowed");
+  // A chime the moment Pay Alone wakes, so a blind user knows it opened before the voice connects.
+  // Played while the microphone is open: Safari lets a page that is listening make sound without a tap.
+  chime();
+  setTimeout(() => stream.getTracks().forEach((t) => t.stop()), 800); // permission is granted now; the SDK opens its own
 
   const live = { connected: false };
   let conv: VoiceConversation | null = null;
