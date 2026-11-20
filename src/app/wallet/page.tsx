@@ -9,6 +9,7 @@ import { startAuthentication, startRegistration } from "@simplewebauthn/browser"
 import { inNativeApp, nativeCreateKey, nativeSign } from "@/lib/native";
 import { canListen, recordAnswer } from "@/lib/listen";
 import type { Intent } from "@/lib/voice/intent";
+import { stageBrief, stageKeyNow, stageOpen, stageSend } from "@/lib/stage";
 import { nudgeAudio, report, stageMode, startLive, type LiveMode, type LiveSession } from "@/lib/liveVoice";
 import { GlassOrb } from "@/components/GlassOrb";
 import { canWake, startWake } from "@/lib/wake";
@@ -590,6 +591,44 @@ export default function WalletPage() {
     [refresh, say, sayOurs],
   );
 
+  // Stage mode: send what is happening to the studio page (/stage?k=…). The agent's voice goes from liveVoice.
+  const hasCustomer = Boolean(state?.customer);
+  const [stageKey, setStageKey] = useState("");
+  useEffect(() => {
+    if (!hasCustomer || !stageMode()) return;
+    void api<{ key: string }>("/api/wallet/stage")
+      .then((r) => {
+        stageOpen(r.key);
+        setStageKey(r.key);
+      })
+      .catch(() => {});
+  }, [hasCustomer]);
+  useEffect(() => {
+    if (!stageKey || !state?.customer) return;
+    const c = state.customer;
+    const snap = () =>
+      stageSend("snap", {
+        name: c.name ?? "Customer",
+        left: c.cap?.left ?? null,
+        limit: c.cap?.limit ?? null,
+        every: c.cap?.every ?? null,
+        pending: stageBrief(state.pending ?? null),
+        last: stageBrief(state.last ?? null),
+        mode: liveModeRef.current,
+        lines: liveLines.slice(-6),
+      });
+    snap();
+    const t = setInterval(snap, 2000);
+    return () => clearInterval(t);
+  }, [stageKey, state, liveLines]);
+  useEffect(() => {
+    if (!stageKey) return;
+    stageSend("mode", { mode: liveMode });
+    if (liveMode !== "listening") return;
+    const t = setInterval(() => stageSend("level", { v: liveSession.current?.levels().input ?? 0 }), 150);
+    return () => clearInterval(t);
+  }, [stageKey, liveMode]);
+
   if (loadError && !state) {
     return (
       <>
@@ -980,6 +1019,7 @@ function Approve({
   const [hearing, setHearing] = useState<"" | "speaking" | "listening" | "thinking">("");
   const [talk, setTalk] = useState<{ who: "app" | "you"; text: string }[]>([]);
   const [message, setMessage] = useState("");
+  useEffect(() => stageSend("prompt", { id: request.id, text: message }), [message, request.id]);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const autoAsked = useRef(false);
   // While the live conversation runs, the agent does the talking.
@@ -1442,7 +1482,7 @@ function VoiceStage({ live, onTalk, name, full = false }: { live: Live; onTalk: 
         <span>
           <b>Pay Alone</b>
           <span className={`vp-status ${live.mode}`}>{live.mode === "speaking" ? "Speaking" : live.mode === "listening" ? "Listening" : live.mode === "connecting" ? "Connecting" : live.standby ? "Waiting for “hello”" : "Ready"}
-            {stageOn ? " · Stage mode" : ""}</span>
+            {stageOn ? ` · Stage mode${stageKeyNow() ? ` · studio link: payalone.vercel.app/stage?k=${stageKeyNow()}` : ""}` : ""}</span>
         </span>
         {on && (
           <button className="round dark" onClick={live.end} aria-label="End conversation">

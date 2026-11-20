@@ -3,6 +3,7 @@
 // WebRTC is tried first; if it does not connect within a few seconds (VPNs, strict networks), the same
 // conversation is opened over a WebSocket. The agent cannot move money; the fingerprint approves.
 import { Conversation, stripAudioTags, type VoiceConversation } from "@elevenlabs/client";
+import { stageSend } from "./stage";
 
 export type LiveMode = "connecting" | "listening" | "speaking";
 
@@ -150,6 +151,7 @@ async function open(
   const gate = {
     conv: null as VoiceConversation | null,
     mode: "listening" as "speaking" | "listening",
+    fmt: via === "webrtc" ? "pcm_48000" : "pcm_16000",
     timer: undefined as ReturnType<typeof setTimeout> | undefined,
     apply() {
       if (!stage || !gate.conv) return;
@@ -165,6 +167,16 @@ async function open(
     // The opening sentence comes from the first_message dynamic variable; only the language is overridden.
     overrides: { agent: { language: s.language as never } },
     clientTools: tools,
+    // Stage mode: the agent's own voice also goes to the studio page (same audio, no second call).
+    ...(stage
+      ? {
+          onAudio: (b64: string) => stageSend("audio", { b64, fmt: gate.fmt }),
+          onConversationMetadata: (m: { agent_output_audio_format?: string }) => {
+            if (m?.agent_output_audio_format) gate.fmt = m.agent_output_audio_format;
+          },
+          onInterruption: () => stageSend("flush", {}),
+        }
+      : {}),
     onModeChange: ({ mode }: { mode: "speaking" | "listening" }) => {
       o.onMode(mode);
       gate.mode = mode;
