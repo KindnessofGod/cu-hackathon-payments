@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addAmounts, exceedsCap, formatAmount, isAmount, parseMajor, remainingOfCap, speakAmount, toMajorString } from "./money";
+import { addAmounts, exceedsCap, formatAmount, isAmount, parseMajor, remainingOfCap, speakAmount, toMajorString, amountFromSpeech } from "./money";
 
 const ngn = (value: string) => ({ value, assetCode: "NGN", assetScale: 2 });
 
@@ -55,5 +55,25 @@ describe("isAmount", () => {
     expect(isAmount({ value: "1.5", assetCode: "NGN", assetScale: 2 })).toBe(false);
     expect(isAmount({ value: 10, assetCode: "NGN", assetScale: 2 })).toBe(false);
     expect(isAmount(null)).toBe(false);
+  });
+});
+
+describe("amountFromSpeech (naira by default)", () => {
+  const f = (t: string) => amountFromSpeech(t, "USD", 2);
+  it("treats a bare number as naira and converts at the CBN rate", () => {
+    expect(f("5000")).toEqual({ minor: "369", saidNaira: "5,000" });
+    expect(f("5,000 naira")).toEqual({ minor: "369", saidNaira: "5,000" });
+    expect(f("5k")).toEqual({ minor: "369", saidNaira: "5,000" });
+    expect(f("2 thousand")).toEqual({ minor: "148", saidNaira: "2,000" });
+  });
+  it("keeps dollars when they say dollars", () => {
+    expect(f("2 dollars")).toEqual({ minor: "200", saidNaira: null });
+    expect(f("$2.50")).toEqual({ minor: "250", saidNaira: null });
+    expect(f("50 cents")).toEqual({ minor: "50", saidNaira: null });
+  });
+  it("refuses nothing or zero", () => {
+    expect(f("")).toBeNull();
+    expect(f("0")).toBeNull();
+    expect(f("1 naira")).toBeNull(); // less than one cent
   });
 });

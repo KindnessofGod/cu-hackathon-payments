@@ -15,9 +15,10 @@ export async function POST(req: Request) {
   try {
     const b = await body(req);
     const customer = await requireCustomer();
-    const amount = String(b.amount ?? "");
+    // Amounts are naira unless they say dollars; the app's own buttons send currency "USD".
+    const amount = b.currency === "USD" ? `${String(b.amount ?? "")} dollars` : String(b.amount ?? "");
     const r = b.action === "invest" ? await investPractice(customer, String(b.share ?? ""), amount) : await saveMoney(customer, amount);
-    return ok({ id: r.id, to: r.merchantName, invest: r.invest, replaced: r.replaced ?? "" });
+    return ok({ id: r.id, to: r.merchantName, invest: r.invest, naira: r.saidNaira ?? "" });
   } catch (e) {
     return fail(e);
   }

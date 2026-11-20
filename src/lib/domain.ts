@@ -2,7 +2,7 @@
 import { randomInt } from "crypto";
 import { challengeIsValid, issueChallenge, verifyApproval, type ApprovalChallenge, type ApprovalProof } from "./approval";
 import { makeInterval, periodEnd, periodKey, type Every } from "./interval";
-import { exceedsCap, formatAmount, parseMajor, remainingOfCap, speakAmount, type Amount } from "./money";
+import { amountFromSpeech, exceedsCap, formatAmount, parseMajor, remainingOfCap, speakAmount, type Amount } from "./money";
 import { alertCustomer } from "./push";
 import { gateway, isSimulated, OpError, type OpErrorKind, type QuoteInfo, type WalletInfo } from "./op";
 import { verifyInteractionHash } from "./op/hash";
@@ -248,7 +248,7 @@ export function findPayee(payees: Payee[], said: string): Payee | null {
  * The incoming payment is created on the receiver's wallet with a non-interactive grant, as Open
  * Payments allows for any client.
  */
-export async function sendToContact(customer: Customer, to: string, amountMajor: string): Promise<PaymentRequest & { replaced?: string }> {
+export async function sendToContact(customer: Customer, to: string, amountMajor: string): Promise<PaymentRequest & { saidNaira?: string }> {
   const payees = await payeesOf(customer);
   const contact = findPayee(payees, to);
   if (!contact) {
@@ -274,16 +274,16 @@ export async function prepareOutgoing(
   name: string,
   amountMajor: string,
   extra: { purpose?: PaymentRequest["purpose"]; description?: string; check?: (a: Amount) => Promise<Pick<PaymentRequest, "invest">> } = {},
-): Promise<PaymentRequest & { replaced?: string }> {
+): Promise<PaymentRequest & { saidNaira?: string }> {
+  // Nothing is cancelled for the customer: they decide about the payment that is waiting first.
+  const waiting = await pendingRequest(customer);
+  if (waiting) throw new DomainError("wrong_state", `A payment is already waiting for an answer: ${describeWaiting(waiting)}. Pay it or cancel it first.`);
   const g = gateway("wallet");
   const wallet = await g.getWallet(walletUrl);
-  const minor = parseMajor(amountMajor.replace(/[^0-9.]/g, ""), wallet.assetScale);
-  if (!minor) throw new DomainError("bad_input", "Say an amount greater than zero, for example five hundred.");
-  const requested: Amount = { value: minor, assetCode: wallet.assetCode, assetScale: wallet.assetScale };
+  const said = amountFromSpeech(amountMajor, wallet.assetCode, wallet.assetScale);
+  if (!said) throw new DomainError("bad_input", "Say an amount greater than zero, for example five thousand naira.");
+  const requested: Amount = { value: said.minor, assetCode: wallet.assetCode, assetScale: wallet.assetScale };
   const more = extra.check ? await extra.check(requested) : {};
-  // The customer asked for something new: an unanswered payment that is still waiting is cancelled
-  // (nothing was paid on it), so it no longer blocks this one. A payment already being paid is not touched.
-  const replaced = await cancelOpen(customer);
   const now = Date.now();
   const expiresAt = new Date(now + REQUEST_TTL_MS).toISOString();
   const incoming = await g.createIncomingPayment({ wallet, amount: requested, expiresAt, description: extra.description ?? "Sent with Pay Alone" });
@@ -303,21 +303,16 @@ export async function prepareOutgoing(
     ...more,
   };
   await store().put("requests", request.id, request);
-  return replaced ? { ...request, replaced } : request;
+  return said.saidNaira ? { ...request, saidNaira: said.saidNaira } : request;
 }
 
-/** Cancels this customer's open (unanswered) requests. Returns what was cancelled, in words, or "". */
-async function cancelOpen(customer: Customer): Promise<string> {
-  const open = (await store().list<PaymentRequest>("requests")).filter((r) => r.customerId === customer.id && isOpen(r));
-  const said: string[] = [];
-  for (const r of open) {
-    r.status = "declined";
-    r.approval = undefined;
-    r.failure = { kind: "grant_rejected", message: "Cancelled: the customer asked for a different payment. No money moved." };
-    await store().put("requests", r.id, r);
-    said.push(`${r.merchantName} (${formatAmount(r.quote?.debitAmount ?? r.requested)})`);
-  }
-  return said.join(", ");
+/** The waiting payment in words, e.g. "Mama Chris is asking you for 5,000 dollars, about 6,769,850 naira". */
+export function describeWaiting(r: PaymentRequest): string {
+  const amount = speakAmount(r.quote?.debitAmount ?? r.requested);
+  if (!r.outgoing) return `${r.merchantName} is asking you for ${amount}`;
+  if (r.purpose === "save") return `saving ${amount} into your savings`;
+  if (r.purpose === "invest") return `a practice investment of ${amount}${r.invest ? ` in ${r.invest.name}` : ""}`;
+  return `sending ${amount} to ${r.merchantName}`;
 }
 
 export type MerchantStatus = "waiting" | "received" | "declined" | "expired" | "failed";

@@ -123,12 +123,12 @@ export function findShare(said: string) {
 const savingsUrl = () => process.env.SAVINGS_WALLET_ADDRESS_URL ?? "";
 const investUrl = () => process.env.INVEST_WALLET_ADDRESS_URL ?? "";
 
-export async function saveMoney(customer: Customer, amountMajor: string): Promise<PaymentRequest & { replaced?: string }> {
+export async function saveMoney(customer: Customer, amountMajor: string): Promise<PaymentRequest & { saidNaira?: string }> {
   if (!savingsUrl()) throw new DomainError("wrong_state", "The savings wallet is not set up yet.");
   return prepareOutgoing(customer, savingsUrl(), "your savings", amountMajor, { purpose: "save", description: "Savings, with Pay Alone" });
 }
 
-export async function investPractice(customer: Customer, share: string, amountMajor: string): Promise<PaymentRequest & { replaced?: string }> {
+export async function investPractice(customer: Customer, share: string, amountMajor: string): Promise<PaymentRequest & { saidNaira?: string }> {
   if (!investUrl()) throw new DomainError("wrong_state", "Practice investing is not set up yet.");
   const w = findShare(share);
   if (!w) throw new DomainError("not_found", `I can only invest in: ${WATCH.map((x) => x.name).join(", ")}.`);

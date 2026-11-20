@@ -369,10 +369,10 @@ export default function WalletPage() {
 
   // Starts a payment the customer asked for by voice and waits for the wallet's quote. Never pays.
   const prepared = useCallback(
-    async (start: () => Promise<{ id: string; to: string; replaced?: string }>): Promise<string> => {
+    async (start: () => Promise<{ id: string; to: string; naira?: string }>): Promise<string> => {
       try {
         const res = await start();
-        const before = res.replaced ? `The earlier payment that was waiting (${res.replaced}) was cancelled; nothing was paid on it. ` : "";
+        const said = res.naira ? `The customer asked for ${res.naira} naira; the test wallet runs in dollars, so it is sent as its dollar value at the CBN rate. Say it as ${res.naira} naira, and also give the dollar amount. ` : "";
         sentByVoice.current = res.id;
         liveFor.current = res.id;
         for (let i = 0; i < 25; i++) {
@@ -380,7 +380,7 @@ export default function WalletPage() {
           const r = st?.pending;
           if (r && r.id === res.id && r.debitAmount && r.receiveAmount) {
             const consent = r.needsWalletConsent ? " There is no spending limit, so after the fingerprint the wallet will open its own page to confirm." : "";
-            return `${before}ready, not paid yet: ${r.merchantName} will receive ${speakAmount(r.receiveAmount)}. ${speakAmount(r.debitAmount)} will leave the customer's account, fees included.${consent} Ask the customer if they want to pay.`;
+            return `${said}ready, not paid yet: ${r.merchantName} will receive ${speakAmount(r.receiveAmount)}. ${speakAmount(r.debitAmount)} will leave the customer's account, fees included.${consent} Ask the customer if they want to pay.`;
           }
           if (!r || r.id !== res.id) {
             if (st?.last?.id === res.id) return `could not prepare: ${st.last.failure?.message ?? "the wallet did not accept it"}. Nothing was paid.`;
@@ -389,7 +389,10 @@ export default function WalletPage() {
         }
         return "not ready: the wallet did not give the exact amount in time. Nothing was paid.";
       } catch (e) {
-        return `could not prepare: ${errorText(e).message} Nothing was paid.`;
+        const msg = errorText(e).message;
+        if (/already waiting/.test(msg))
+          return `not started: ${msg} Nothing was cancelled and nothing was paid. Tell the customer exactly which payment is waiting (who and how much) and ask: pay it, or cancel it? To pay it, follow step 3 and call approve_payment. To cancel it, call refuse_payment; then, if they still want the new one, call this tool again.`;
+        return `could not prepare: ${msg} Nothing was paid.`;
       }
     },
     [refresh],
@@ -2116,7 +2119,7 @@ function GrowSheet({ say, onStarted, onClose }: { say: (t: string) => void; onSt
     setBusy(label);
     setErr("");
     try {
-      await api("/api/wallet/grow", { method: "POST", body });
+      await api("/api/wallet/grow", { method: "POST", body: { currency: "USD", ...body } });
       say(`${label}. Your wallet is getting the exact amount. Then approve it with your fingerprint.`);
       onStarted();
     } catch (e) {

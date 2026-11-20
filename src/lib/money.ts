@@ -87,7 +87,7 @@ export function speakAmount(a: Amount): string {
   return n && n !== "0" ? `${speakPlain(a)}, about ${n} naira` : speakPlain(a);
 }
 
-function speakPlain(a: Amount): string {
+export function speakPlain(a: Amount): string {
   const [whole, frac] = toMajorString(a.value, a.assetScale).split(".");
   const words = CURRENCY_WORDS[a.assetCode];
   const fracIsZero = !frac || /^0+$/.test(frac);
@@ -119,4 +119,36 @@ export function remainingOfCap(cap: Amount, spent: Amount): Amount {
 export function exceedsCap(cap: Amount, spent: Amount, next: Amount): boolean {
   if (!sameAsset(cap, spent) || !sameAsset(cap, next)) throw new Error("amounts are in different assets");
   return BigInt(spent.value) + BigInt(next.value) > BigInt(cap.value);
+}
+
+/**
+ * An amount as the customer said it, in the wallet's currency. Naira is the default: "5000",
+ * "5,000 naira" and "5k" are naira; "2 dollars", "$2" and "50 cents" are dollars. A naira amount
+ * for a dollar wallet is converted at the CBN rate (rounded to the nearest cent). Returns the
+ * minor units and, when converted, the naira the customer said (grouped, e.g. "5,000").
+ */
+export function amountFromSpeech(text: string, assetCode: string, assetScale: number): { minor: string; saidNaira: string | null } | null {
+  const t = text.toLowerCase().replace(/,/g, "");
+  const m = t.match(/\d+(\.\d+)?/);
+  if (!m) return null;
+  let num = m[0];
+  if (/\d\s*k\b|thousand/.test(t)) num = (Number(num) * 1000).toString();
+  if (/million/.test(t)) num = (Number(num) * 1_000_000).toString();
+  const dollars = /\$|dollar|usd/.test(t);
+  const centsOnly = /cent/.test(t) && !dollars;
+  if (assetCode !== "USD") {
+    const minor = parseMajor(num, assetScale);
+    return minor ? { minor, saidNaira: null } : null;
+  }
+  const scaleUp = BigInt(10) ** BigInt(Math.max(0, assetScale - 2));
+  if (dollars || centsOnly) {
+    const minor = centsOnly ? (/^\d+$/.test(num) && BigInt(num) > BigInt(0) ? (BigInt(num) * scaleUp).toString() : null) : parseMajor(num, assetScale);
+    return minor ? { minor, saidNaira: null } : null;
+  }
+  const kobo = parseMajor(num, 2);
+  if (!kobo) return null;
+  const cents = (BigInt(kobo) * BigInt(100) + NGN_PER_USD_KOBO / BigInt(2)) / NGN_PER_USD_KOBO;
+  if (cents <= BigInt(0)) return null;
+  const [w, f] = num.split(".");
+  return { minor: (cents * scaleUp).toString(), saidNaira: group(w) + (f && !/^0+$/.test(f) ? "." + f : "") };
 }
