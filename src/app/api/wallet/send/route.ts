@@ -6,7 +6,7 @@ export async function POST(req: Request) {
   try {
     const b = await body(req);
     const r = await sendToContact(await requireCustomer(), String(b.to ?? ""), String(b.amount ?? ""));
-    return ok({ id: r.id, to: r.merchantName });
+    return ok({ id: r.id, to: r.merchantName, replaced: r.replaced ?? "" });
   } catch (e) {
     return fail(e);
   }

@@ -248,7 +248,7 @@ export function findPayee(payees: Payee[], said: string): Payee | null {
  * The incoming payment is created on the receiver's wallet with a non-interactive grant, as Open
  * Payments allows for any client.
  */
-export async function sendToContact(customer: Customer, to: string, amountMajor: string): Promise<PaymentRequest> {
+export async function sendToContact(customer: Customer, to: string, amountMajor: string): Promise<PaymentRequest & { replaced?: string }> {
   const payees = await payeesOf(customer);
   const contact = findPayee(payees, to);
   if (!contact) {
@@ -274,14 +274,16 @@ export async function prepareOutgoing(
   name: string,
   amountMajor: string,
   extra: { purpose?: PaymentRequest["purpose"]; description?: string; check?: (a: Amount) => Promise<Pick<PaymentRequest, "invest">> } = {},
-): Promise<PaymentRequest> {
-  if (await pendingRequest(customer)) throw new DomainError("wrong_state", "Another payment is waiting. Answer that one first.");
+): Promise<PaymentRequest & { replaced?: string }> {
   const g = gateway("wallet");
   const wallet = await g.getWallet(walletUrl);
   const minor = parseMajor(amountMajor.replace(/[^0-9.]/g, ""), wallet.assetScale);
   if (!minor) throw new DomainError("bad_input", "Say an amount greater than zero, for example five hundred.");
   const requested: Amount = { value: minor, assetCode: wallet.assetCode, assetScale: wallet.assetScale };
   const more = extra.check ? await extra.check(requested) : {};
+  // The customer asked for something new: an unanswered payment that is still waiting is cancelled
+  // (nothing was paid on it), so it no longer blocks this one. A payment already being paid is not touched.
+  const replaced = await cancelOpen(customer);
   const now = Date.now();
   const expiresAt = new Date(now + REQUEST_TTL_MS).toISOString();
   const incoming = await g.createIncomingPayment({ wallet, amount: requested, expiresAt, description: extra.description ?? "Sent with Pay Alone" });
@@ -301,7 +303,21 @@ export async function prepareOutgoing(
     ...more,
   };
   await store().put("requests", request.id, request);
-  return request;
+  return replaced ? { ...request, replaced } : request;
+}
+
+/** Cancels this customer's open (unanswered) requests. Returns what was cancelled, in words, or "". */
+async function cancelOpen(customer: Customer): Promise<string> {
+  const open = (await store().list<PaymentRequest>("requests")).filter((r) => r.customerId === customer.id && isOpen(r));
+  const said: string[] = [];
+  for (const r of open) {
+    r.status = "declined";
+    r.approval = undefined;
+    r.failure = { kind: "grant_rejected", message: "Cancelled: the customer asked for a different payment. No money moved." };
+    await store().put("requests", r.id, r);
+    said.push(`${r.merchantName} (${formatAmount(r.quote?.debitAmount ?? r.requested)})`);
+  }
+  return said.join(", ");
 }
 
 export type MerchantStatus = "waiting" | "received" | "declined" | "expired" | "failed";

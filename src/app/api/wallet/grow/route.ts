@@ -17,7 +17,7 @@ export async function POST(req: Request) {
     const customer = await requireCustomer();
     const amount = String(b.amount ?? "");
     const r = b.action === "invest" ? await investPractice(customer, String(b.share ?? ""), amount) : await saveMoney(customer, amount);
-    return ok({ id: r.id, to: r.merchantName, invest: r.invest });
+    return ok({ id: r.id, to: r.merchantName, invest: r.invest, replaced: r.replaced ?? "" });
   } catch (e) {
     return fail(e);
   }

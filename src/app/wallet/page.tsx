@@ -369,9 +369,10 @@ export default function WalletPage() {
 
   // Starts a payment the customer asked for by voice and waits for the wallet's quote. Never pays.
   const prepared = useCallback(
-    async (start: () => Promise<{ id: string; to: string }>): Promise<string> => {
+    async (start: () => Promise<{ id: string; to: string; replaced?: string }>): Promise<string> => {
       try {
         const res = await start();
+        const before = res.replaced ? `The earlier payment that was waiting (${res.replaced}) was cancelled; nothing was paid on it. ` : "";
         sentByVoice.current = res.id;
         liveFor.current = res.id;
         for (let i = 0; i < 25; i++) {
@@ -379,7 +380,7 @@ export default function WalletPage() {
           const r = st?.pending;
           if (r && r.id === res.id && r.debitAmount && r.receiveAmount) {
             const consent = r.needsWalletConsent ? " There is no spending limit, so after the fingerprint the wallet will open its own page to confirm." : "";
-            return `ready, not paid yet: ${r.merchantName} will receive ${speakAmount(r.receiveAmount)}. ${speakAmount(r.debitAmount)} will leave the customer's account, fees included.${consent} Ask the customer if they want to pay.`;
+            return `${before}ready, not paid yet: ${r.merchantName} will receive ${speakAmount(r.receiveAmount)}. ${speakAmount(r.debitAmount)} will leave the customer's account, fees included.${consent} Ask the customer if they want to pay.`;
           }
           if (!r || r.id !== res.id) {
             if (st?.last?.id === res.id) return `could not prepare: ${st.last.failure?.message ?? "the wallet did not accept it"}. Nothing was paid.`;
