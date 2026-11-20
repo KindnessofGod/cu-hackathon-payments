@@ -160,29 +160,39 @@ function unlockAudio(): Promise<MediaStream | null> {
   }) ?? Promise.resolve(null);
 }
 
-/** Two rising notes (about half a second), made in the browser: no file to load. */
+/** Three rising notes (under a second), made in the browser: no file to load. Loud on purpose:
+ * while the microphone is open the iPad plays sound quieter, and small speakers carry high notes best. */
 export function chime(): void {
   try {
     const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     const ctx = new Ctx();
     void ctx.resume();
+    const comp = ctx.createDynamicsCompressor(); // lets the notes run hot without crackling
+    comp.threshold.value = -6;
+    comp.ratio.value = 12;
+    comp.connect(ctx.destination);
     const t0 = ctx.currentTime + 0.02;
     [
-      [660, 0],
-      [990, 0.16],
+      [1047, 0],
+      [1319, 0.18],
+      [1568, 0.36],
     ].forEach(([hz, at]) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = "sine";
-      osc.frequency.value = hz;
-      gain.gain.setValueAtTime(0.0001, t0 + at);
-      gain.gain.exponentialRampToValueAtTime(0.35, t0 + at + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + at + 0.32);
-      osc.connect(gain).connect(ctx.destination);
-      osc.start(t0 + at);
-      osc.stop(t0 + at + 0.34);
+      for (const type of ["triangle", "square"] as const) {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = type;
+        osc.frequency.value = hz;
+        const peak = type === "triangle" ? 1 : 0.25;
+        gain.gain.setValueAtTime(0.0001, t0 + at);
+        gain.gain.exponentialRampToValueAtTime(peak, t0 + at + 0.015);
+        gain.gain.setValueAtTime(peak, t0 + at + 0.12);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t0 + at + 0.4);
+        osc.connect(gain).connect(comp);
+        osc.start(t0 + at);
+        osc.stop(t0 + at + 0.42);
+      }
     });
-    setTimeout(() => void ctx.close(), 900);
+    setTimeout(() => void ctx.close(), 1200);
   } catch {
     // no sound possible here
   }
