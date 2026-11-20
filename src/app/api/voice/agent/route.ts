@@ -72,7 +72,9 @@ export async function GET(req: Request) {
       native && hasDevice
         ? "Rest your finger on the Home button."
         : hasPasskey
-          ? "Tap the screen once, then rest your finger on the Home button."
+          ? q.get("tap") === "1"
+            ? "Tap the screen once, then rest your finger on the Home button."
+            : "Rest your finger on the Home button."
           : hasDevice
             ? "Open the Pay Alone app on this iPad to approve with your fingerprint."
             : "Tap the screen once to pay.";

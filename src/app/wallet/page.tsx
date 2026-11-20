@@ -265,6 +265,23 @@ function resultSentence(r: RequestView, cap: CapView | null): string {
   return "";
 }
 
+/** Whether this device's browser opens the fingerprint prompt without a tap ("ok"), needs one ("tap"), or is unknown (""). */
+function fingerNoTap(): "" | "ok" | "tap" {
+  try {
+    const v = localStorage.getItem("payalone-finger-notap");
+    return v === "ok" || v === "tap" ? v : "";
+  } catch {
+    return "";
+  }
+}
+function rememberFingerNoTap(v: "ok" | "tap") {
+  try {
+    localStorage.setItem("payalone-finger-notap", v);
+  } catch {
+    // private mode: try again next time
+  }
+}
+
 export default function WalletPage() {
   const [state, setState] = useState<State | null>(null);
   const [loadError, setLoadError] = useState<ApiError | null>(null);
@@ -408,7 +425,7 @@ export default function WalletPage() {
       let heardLines = 0;
       try {
         liveSession.current = await startLive({
-          startUrl: `/api/voice/agent?native=${inNativeApp() ? "1" : "0"}${requestId ? `&id=${encodeURIComponent(requestId)}` : ""}`,
+          startUrl: `/api/voice/agent?native=${inNativeApp() ? "1" : "0"}&tap=${fingerNoTap() === "tap" ? "1" : "0"}${requestId ? `&id=${encodeURIComponent(requestId)}` : ""}`,
           lang: prefs.lang,
           onMode: setLiveMode,
           onLine: (who, text) => {
@@ -1104,7 +1121,7 @@ function Approve({
    * cannot see, whatever the agent said.
    */
   async function sayHowTo() {
-    const how = !needsFinger ? "tap" : inNativeApp() && fingerprint.some((f) => f.kind === "device") ? "finger" : "tapFinger";
+    const how = !needsFinger ? "tap" : (inNativeApp() && fingerprint.some((f) => f.kind === "device")) || fingerNoTap() !== "tap" ? "finger" : "tapFinger";
     const text =
       how === "finger" ? "Now rest your finger on the Home button to pay." : how === "tap" ? "Now tap the screen once to pay." : "Now tap the screen once, then rest your finger on the Home button.";
     for (let i = 0; i < 25 && live.session.current && live.modeNow() === "speaking"; i++) await new Promise((r) => setTimeout(r, 200));
@@ -1277,6 +1294,7 @@ function Approve({
       setMessage(`${spoken ? "" : `${sentence}${consentNote} `}To pay, rest your finger on the Home button. To refuse, do nothing.`);
       try {
         const result = await ask;
+        if (spoken && !useNative) rememberFingerNoTap("ok");
         proof = useNative
           ? { method: "device-key", challenge: request.challenge, signature: result as string }
           : { method: "passkey", challenge: request.challenge, response: result };
@@ -1287,7 +1305,14 @@ function Approve({
           : "Not paid. Your fingerprint was not confirmed. Tap the screen to try again.";
         setArmed(spoken && !useNative);
         setMessage(text);
-        if (spoken && !useNative) return "waiting";
+        if (spoken && !useNative) {
+          // This browser needs a tap before the fingerprint prompt: remember it, and have the voice say so now.
+          if (fingerNoTap() !== "tap") {
+            rememberFingerNoTap("tap");
+            live.session.current?.nudge("(The app: the fingerprint prompt could not open by itself on this iPad. Tell the customer now, once: tap the screen anywhere, then rest your finger on the Home button.)");
+          }
+          return "waiting";
+        }
         if (quiet) settleTool("not paid: the fingerprint was not confirmed. Nothing was paid. The customer can say pay to try again.");
         if (!quiet) say(text);
         return "not paid: the fingerprint was not confirmed. Nothing was paid. The customer can say pay to try again.";

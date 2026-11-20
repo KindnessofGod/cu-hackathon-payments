@@ -13,6 +13,8 @@ export type LiveSession = {
   levels: () => { input: number; output: number };
   /** Tells the agent something new without making it speak (e.g. what is left after a payment). */
   context: (text: string) => void;
+  /** Sends a message as if from the customer's side, so the agent answers it now (app notices). */
+  nudge: (text: string) => void;
 };
 
 export type LiveOptions = {
@@ -325,5 +327,6 @@ export async function startLive(o: LiveOptions): Promise<LiveSession> {
     end: () => c.endSession(),
     levels: () => ({ input: c.getInputVolume(), output: c.getOutputVolume() }),
     context: (text: string) => c.sendContextualUpdate(text),
+    nudge: (text: string) => c.sendUserMessage(text),
   };
 }
