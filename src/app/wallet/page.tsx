@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppBar, Icon } from "@/components/ui";
 import { api, errorText, type ApiError } from "@/lib/client";
-import { formatAmount, speakAmount, type Amount } from "@/lib/money";
+import { formatAmount, nairaOf, speakAmount, type Amount } from "@/lib/money";
 import { BrowserSpeechOutput, HostedSpeechOutput } from "@/lib/speech";
 import { startAuthentication, startRegistration } from "@simplewebauthn/browser";
 import { inNativeApp, nativeCreateKey, nativeSign } from "@/lib/native";
@@ -44,6 +44,11 @@ function Money({ a, size = "md" }: { a: Amount; size?: "sm" | "md" | "lg" | "xl"
         <sup>{symbolOf(a.assetCode)}</sup>
         {num}
       </span>
+      {nairaOf(a) && (
+        <span aria-hidden="true" style={{ display: "block", fontSize: "0.42em", opacity: 0.75, fontWeight: 500, letterSpacing: 0 }}>
+          ≈ ₦{nairaOf(a)}
+        </span>
+      )}
     </span>
   );
 }
@@ -2085,7 +2090,7 @@ function GrowSheet({ say, onStarted, onClose }: { say: (t: string) => void; onSt
               <p style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 {["1", "2", "5"].map((a) => (
                   <button key={a} className="safe-btn" disabled={Boolean(busy)} onClick={() => void start({ action: "save", amount: a }, `Saving ${a} dollars`)}>
-                    Save ${a}
+                    Save ${a} (≈ ₦{nairaOf({ value: String(Number(a) * 100), assetCode: "USD", assetScale: 2 })})
                   </button>
                 ))}
               </p>
@@ -2106,12 +2111,12 @@ function GrowSheet({ say, onStarted, onClose }: { say: (t: string) => void; onSt
               <p>None yet.</p>
             )}
             <h3>Live share prices</h3>
-            <p style={{ fontSize: 13 }}>From Yahoo Finance, delayed. Past changes do not predict the future.</p>
+            <p style={{ fontSize: 13 }}>From Yahoo Finance, delayed. Past changes do not predict the future. Naira {"at the CBN rate of 16 Nov (₦1,353.97 per $1)"}; the test network runs in dollars.</p>
             <ul style={{ listStyle: "none", padding: 0 }}>
               {g.market.map((q) => (
                 <li key={q.symbol} style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", padding: "6px 0", borderBottom: "1px solid #0001" }}>
                   <span>
-                    <b>{q.name}</b> · ${dollars(q.priceMinor)} · {q.changeMonthBp >= 0 ? "▲" : "▼"} {Math.abs(q.changeMonthBp / 100).toFixed(1)}% this month
+                    <b>{q.name}</b> · ${dollars(q.priceMinor)} (≈ ₦{nairaOf({ value: q.priceMinor, assetCode: "USD", assetScale: 2 })}) · {q.changeMonthBp >= 0 ? "▲" : "▼"} {Math.abs(q.changeMonthBp / 100).toFixed(1)}% this month
                     <br />
                     <small>{q.about}</small>
                   </span>
@@ -2120,7 +2125,7 @@ function GrowSheet({ say, onStarted, onClose }: { say: (t: string) => void; onSt
                     disabled={Boolean(busy) || !g.investReady}
                     onClick={() => void start({ action: "invest", share: q.symbol, amount: "1" }, `Practice investing 1 dollar in ${q.name}`)}
                   >
-                    Invest $1
+                    Invest $1 (≈ ₦1,354)
                   </button>
                 </li>
               ))}

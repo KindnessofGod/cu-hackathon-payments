@@ -3,7 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppBar, Icon } from "@/components/ui";
 import { api, errorText, type ApiError } from "@/lib/client";
-import { formatAmount, type Amount } from "@/lib/money";
+import { formatAmount as fmtPlain, nairaOf, type Amount } from "@/lib/money";
+
+/** Dollars on the test network, with the naira figure for Nigerian sellers (display only). */
+const formatAmount = (a: Amount) => (nairaOf(a) ? `${fmtPlain(a)} (≈ ₦${nairaOf(a)})` : fmtPlain(a));
 
 interface MerchantData {
   simulated: boolean;
@@ -170,6 +173,11 @@ export default function MerchantPage() {
                   onChange={(e) => setAmount(e.target.value)}
                 />
               </div>
+              {data.merchant.assetCode === "USD" && /^\d+(\.\d{1,2})?$/.test(amount.trim()) && Number(amount) > 0 && (
+                <p className="muted" style={{ marginTop: 6 }}>
+                  ≈ ₦{nairaOf({ value: String(Math.round(Number(amount) * 100)), assetCode: "USD", assetScale: 2 })} at the CBN rate of 16 Nov (₦1,353.97 per $1). The test network runs in dollars.
+                </p>
+              )}
               {error && (
                 <div className="status bad" role="alert" style={{ marginTop: "1rem" }}>
                   <p>{error.message}</p>

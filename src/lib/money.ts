@@ -67,8 +67,27 @@ const CURRENCY_WORDS: Record<string, [string, string, string, string]> = {
   MXN: ["pesos", "centavos", "peso", "centavo"],
 };
 
-/** For speech: "2,050 naira" or "12 dollars and 50 cents". Never drops a non-zero fraction. */
+/**
+ * The test network has no naira, so dollar amounts also carry a naira figure for Nigerian users:
+ * at the CBN official rate of 16 Nov 2026 (NGN 1,353.97 per USD), rounded to the nearest naira.
+ * Display only: the money itself moves in dollars.
+ */
+export const NGN_PER_USD_KOBO = BigInt(135397);
+export const NGN_RATE_NOTE = "at the CBN rate of 16 Nov (₦1,353.97 per $1)";
+export function nairaOf(a: Amount): string | null {
+  if (a.assetCode !== "USD") return null;
+  const cents = (BigInt(a.value) * BigInt(100)) / BigInt(10) ** BigInt(a.assetScale);
+  const naira = (cents * NGN_PER_USD_KOBO + BigInt(5000)) / BigInt(10000);
+  return group(naira.toString());
+}
+
+/** For speech: "2,050 naira" or "12 dollars and 50 cents, about 16,925 naira". Never drops a non-zero fraction. */
 export function speakAmount(a: Amount): string {
+  const n = nairaOf(a);
+  return n && n !== "0" ? `${speakPlain(a)}, about ${n} naira` : speakPlain(a);
+}
+
+function speakPlain(a: Amount): string {
   const [whole, frac] = toMajorString(a.value, a.assetScale).split(".");
   const words = CURRENCY_WORDS[a.assetCode];
   const fracIsZero = !frac || /^0+$/.test(frac);
