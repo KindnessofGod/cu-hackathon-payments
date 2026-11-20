@@ -432,7 +432,18 @@ export default function WalletPage() {
               const code = (await refresh())?.customer?.payCode ?? "";
               return code ? `shown: the QR code and the pay code ${code.split("").join(" ")} are now large on the screen.` : "could not show the pay code.";
             },
-            approve_payment: () => liveHandlers.current.approve?.() ?? Promise.resolve(nothingWaiting()),
+            // The result is also sent as a context update: if the customer spoke while the fingerprint was
+            // being asked for, the voice service can drop the tool result with that turn, and the agent
+            // would keep asking for a finger that was already given.
+            approve_payment: async () => {
+              const r = await (liveHandlers.current.approve?.() ?? Promise.resolve(nothingWaiting()));
+              liveSession.current?.context(
+                r.startsWith("paid")
+                  ? `RESULT: the payment is finished and PAID. ${r} Do not ask for a tap or the fingerprint again. Tell the customer plainly that it is paid.`
+                  : `RESULT of the fingerprint step: ${r}`,
+              );
+              return r;
+            },
             refuse_payment: () => liveHandlers.current.refuse?.() ?? Promise.resolve("nothing to refuse: no payment is waiting right now."),
             send_money: async (p) => prepared(() => api<{ id: string; to: string }>("/api/wallet/send", { method: "POST", body: { to: String(p.to ?? ""), amount: String(p.amount ?? "") } })),
             save_money: async (p) =>
