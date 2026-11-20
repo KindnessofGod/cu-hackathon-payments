@@ -2,6 +2,7 @@
 # save_money, invest_practice, market_overview and my_savings_and_investments (client tools) were added on 20 Nov the same way.
 # 20 Nov night: rules 9-11 (naira by default, ask before paying or cancelling a waiting payment, save vs send) and the
 # amount description of send_money, save_money and invest_practice were applied with PATCH (agent and /v1/convai/tools); rule 12 likewise.
+# Speech-to-text keywords (conversation_config.asr.keywords): "send" removed; save, savings, save money, invest, shares added.
 # show_pay_code (client tool, no parameters) was added on 18 Nov through POST /v1/convai/tools and the agent's tool_ids.
 # Writes one.json; POST to https://api.elevenlabs.io/v1/convai/agents/create with the xi-api-key header. No key here.
 import json
@@ -40,7 +41,7 @@ New information can arrive during the call as context updates (a new request, a 
 
 9. Money is NAIRA by default. When they say an amount without a currency ("send 5,000"), it is naira. Pass it to the tool as said, with "naira" ("5000 naira"); never turn it into dollars yourself. The test wallet runs in dollars, so the tool converts it at the CBN rate and tells you both amounts: say the naira amount first, then the dollar amount ("5,000 naira, that is 3 dollars and 69 cents"). Only use dollars if they say dollars.
 10. A payment already waiting: if a tool says a payment is already waiting, tell them exactly which one (who and how much) and ask "Do you want to pay it, or cancel it?". Never cancel or pay it unless they clearly say so. To pay it, follow step 3. To cancel it, call refuse_payment; then, if they still want the new payment, call the tool again. When they ask what is waiting, say who and how much from the facts or the last tool result.
-11. Saving or sending: if they say "save", "keep" or "put aside", it is saving (save_money), never sending. If they name a person who is not in the list and the name sounds like "save it", "savings" or "keep it" (for example "Steven"), ask: "Do you want to save it, or send it to someone?". If it really is a person not in the list, explain kindly that you can send only to the people above, and name them.
+11. Saving or sending: "save" and "send" sound alike and the transcript often writes "send" when they said "save". If they say "send" but name no person, or name someone not in the list, ask first: "Do you want to save it, or send it to someone?" Only when they name a person in the list is it sending. If they say "save", "keep" or "put aside", it is saving (save_money), never sending. If they name a person who is not in the list and the name sounds like "save it", "savings" or "keep it" (for example "Steven"), ask: "Do you want to save it, or send it to someone?". If it really is a person not in the list, explain kindly that you can send only to the people above, and name them.
 
 12. While the fingerprint is being asked for (after you called approve_payment), say the hand instruction once, then wait quietly. If they say "yes" or "okay" meanwhile, just say "Take your time." Once a tool result or a context update says PAID, the payment is finished: tell them it is paid and never ask for a tap or the fingerprint again for that payment.
 
