@@ -98,25 +98,6 @@ function withTimeout<T>(p: Promise<T>, ms: number, onLate: (v: T) => void): Prom
   });
 }
 
-/**
- * Stage mode: iPadOS treats a page using an echo-cancelled microphone as a voice call, and screen
- * broadcasts (VDO.Ninja to the studio) leave call sound out. Asking for a plain microphone (no echo
- * cancellation; the microphone is off while Pay Alone speaks anyway) lets its voice be broadcast.
- */
-function plainMicrophone(): void {
-  const md = navigator.mediaDevices as MediaDevices & { __plain?: boolean };
-  if (!md?.getUserMedia || md.__plain) return;
-  const original = md.getUserMedia.bind(md);
-  md.getUserMedia = (c?: MediaStreamConstraints) => {
-    if (c?.audio) {
-      const a = typeof c.audio === "object" ? c.audio : {};
-      c = { ...c, audio: { ...a, echoCancellation: false, noiseSuppression: false, autoGainControl: false } };
-    }
-    return original(c);
-  };
-  md.__plain = true;
-}
-
 /** How long the microphone stays off after Pay Alone stops speaking, in stage mode (hall delay plus echo). */
 const STAGE_TAIL_MS = 1500;
 
@@ -328,7 +309,8 @@ export function nudgeAudio(): void {
 export async function startLive(o: LiveOptions): Promise<LiveSession> {
   o.onMode("connecting");
   const stage = stageMode();
-  if (stage) plainMicrophone();
+  // The normal (echo-cancelled) microphone also in stage mode: the plain one was too quiet to hear the
+  // customer, and the studio gets the voice from the forwarded audio, not from a screen broadcast.
   const mic = unlockAudio(); // must start before any await, while the tap still counts
   const stream = await mic;
   if (!stream) throw new Error("microphone not allowed");

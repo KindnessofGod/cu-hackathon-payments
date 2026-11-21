@@ -433,6 +433,28 @@ export default function WalletPage() {
     [refresh],
   );
 
+  // One fingerprint approval at a time, started by the agent's tool or by the safety net.
+  const approving = useRef(false);
+  const runApprove = useCallback(async (): Promise<string> => {
+    if (approving.current) return "not paid: the fingerprint prompt is already open. Wait for the customer's finger.";
+    approving.current = true;
+    try {
+      const r = await (liveHandlers.current.approve?.() ?? Promise.resolve(nothingWaiting()));
+      // The result is also sent as a context update: if the customer spoke while the fingerprint was
+      // being asked for, the voice service can drop the tool result with that turn.
+      liveSession.current?.context(
+        r.startsWith("paid")
+          ? `RESULT: the payment is finished and PAID. ${r} Do not ask for a tap or the fingerprint again. Tell the customer plainly that it is paid.`
+          : `RESULT of the fingerprint step: ${r}`,
+      );
+      // The Touch ID sheet can leave the microphone paused on iPad: reopen it.
+      setTimeout(() => void liveSession.current?.refreshAudio("after fingerprint"), 400);
+      return r;
+    } finally {
+      approving.current = false;
+    }
+  }, []);
+
   const startLiveVoice = useCallback(
     async (requestId?: string): Promise<boolean> => {
       if (liveActive.current) return true;
@@ -449,6 +471,15 @@ export default function WalletPage() {
           onLine: (who, text) => {
             heardLines++;
             setLiveLines((l) => [...l, { who, text }]);
+            // Safety net: the agent told the customer to use their finger but did not open the prompt.
+            if (who === "app" && /rest your finger|home button/i.test(text)) {
+              setTimeout(() => {
+                if (!approving.current && liveHandlers.current.approve) {
+                  report("agent asked for the finger without approve_payment; opening it");
+                  void runApprove();
+                }
+              }, 1500);
+            }
           },
           onEnd: () => {
             liveActive.current = false;
@@ -470,17 +501,7 @@ export default function WalletPage() {
             // The result is also sent as a context update: if the customer spoke while the fingerprint was
             // being asked for, the voice service can drop the tool result with that turn, and the agent
             // would keep asking for a finger that was already given.
-            approve_payment: async () => {
-              const r = await (liveHandlers.current.approve?.() ?? Promise.resolve(nothingWaiting()));
-              // The Touch ID sheet can leave the microphone paused on iPad: reopen it.
-              setTimeout(() => void liveSession.current?.refreshAudio("after fingerprint"), 400);
-              liveSession.current?.context(
-                r.startsWith("paid")
-                  ? `RESULT: the payment is finished and PAID. ${r} Do not ask for a tap or the fingerprint again. Tell the customer plainly that it is paid.`
-                  : `RESULT of the fingerprint step: ${r}`,
-              );
-              return r;
-            },
+            approve_payment: () => runApprove(),
             refuse_payment: () => liveHandlers.current.refuse?.() ?? Promise.resolve("nothing to refuse: no payment is waiting right now."),
             send_money: async (p) => prepared(() => api<{ id: string; to: string }>("/api/wallet/send", { method: "POST", body: { to: String(p.to ?? ""), amount: String(p.amount ?? "") } })),
             save_money: async (p) =>
@@ -518,7 +539,7 @@ export default function WalletPage() {
         return false;
       }
     },
-    [prefs.lang, refresh, setLiveMode, prepared],
+    [prefs.lang, refresh, setLiveMode, prepared, runApprove],
   );
 
   const live: Live = {
@@ -583,7 +604,7 @@ export default function WalletPage() {
     const onTap = () => {
       if (!liveActive.current) return;
       nudgeAudio();
-      void liveSession.current?.refreshAudio("tap");
+      if (!approving.current) void liveSession.current?.refreshAudio("tap"); // never while the fingerprint prompt opens
     };
     document.addEventListener("pointerdown", onTap);
     return () => document.removeEventListener("pointerdown", onTap);
