@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppBar, Icon } from "@/components/ui";
 import { MerchantKey } from "@/components/MerchantKey";
+import { startMirror } from "@/lib/mirror";
+import { LIVE_KEY, stageOpen } from "@/lib/stage";
 import { api, errorText, type ApiError } from "@/lib/client";
 import { formatAmount as fmtPlain, nairaOf, type Amount } from "@/lib/money";
 
@@ -60,6 +62,14 @@ export default function MerchantPage() {
     api<MerchantData>("/api/merchant").then(setData, (e) => setLoadError(errorText(e)));
   }, []);
   useEffect(load, [load]);
+
+  // The studio screen shows this phone on the seller's side: once unlocked, send a live copy of it.
+  const unlocked = Boolean(data);
+  useEffect(() => {
+    if (!unlocked) return;
+    stageOpen(LIVE_KEY);
+    return startMirror(undefined, "merchant");
+  }, [unlocked]);
 
   // Poll the wallet for this request until it reaches a final state.
   useEffect(() => {

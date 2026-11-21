@@ -34,6 +34,14 @@ function copyOf(el: Element): Element {
       } else c.setAttribute("value", o.value);
     } else if (o instanceof HTMLTextAreaElement) c.textContent = o.value;
     else if (o instanceof HTMLCanvasElement) c.replaceWith(document.createElement("i"));
+    else if (o instanceof HTMLVideoElement) {
+      // A live camera cannot be copied as HTML: show a plain "camera" box of the same size instead.
+      const box = document.createElement("div");
+      const r = o.getBoundingClientRect();
+      box.setAttribute("style", `width:${Math.round(r.width)}px;height:${Math.round(r.height)}px;background:#111;color:#fff;display:grid;place-items:center;border-radius:12px;font:600 18px system-ui`);
+      box.textContent = "Camera: scanning the QR code…";
+      c.replaceWith(box);
+    }
   }
   for (const s of clone.querySelectorAll("script, noscript, iframe, template")) s.remove();
   return clone;
@@ -54,8 +62,9 @@ function headInfo() {
   return { css, styles, htmlClass: document.documentElement.className, htmlStyle: document.documentElement.getAttribute("style") ?? "", bodyClass: document.body.className, lang: document.documentElement.lang };
 }
 
-/** Starts mirroring; returns a stop function. */
-export function startMirror(report?: (why: string) => void): () => void {
+/** Starts mirroring; returns a stop function. "customer" is Gloria's iPad, "merchant" the seller's phone. */
+export function startMirror(report?: (why: string) => void, side: "customer" | "merchant" = "customer"): () => void {
+  const ev = side === "merchant" ? ({ dom: "mdom", head: "mhead", scroll: "mscroll" } as const) : ({ dom: "dom", head: "head", scroll: "scroll" } as const);
   let last = "";
   let lastHead = "";
   let timer: ReturnType<typeof setTimeout> | null = null;
@@ -71,11 +80,11 @@ export function startMirror(report?: (why: string) => void): () => void {
       const head = JSON.stringify(headInfo());
       if (force || head !== lastHead) {
         lastHead = head;
-        stageSend("head", JSON.parse(head));
+        stageSend(ev.head, JSON.parse(head));
       }
       const html = snapshot();
       if (!force && html === last) {
-        stageSend("scroll", { sy: Math.round(window.scrollY), sx: Math.round(window.scrollX) });
+        stageSend(ev.scroll, { sy: Math.round(window.scrollY), sx: Math.round(window.scrollX) });
         return;
       }
       last = html;
@@ -86,7 +95,7 @@ export function startMirror(report?: (why: string) => void): () => void {
         return;
       }
       lastSent = Date.now();
-      stageSend("dom", { z, w: window.innerWidth, h: window.innerHeight, sy: Math.round(window.scrollY), sx: Math.round(window.scrollX) });
+      stageSend(ev.dom, { z, w: window.innerWidth, h: window.innerHeight, sy: Math.round(window.scrollY), sx: Math.round(window.scrollX) });
     } catch (e) {
       if (!warned) report?.(`screen copy failed: ${e instanceof Error ? e.message : String(e)}`);
       warned = true;

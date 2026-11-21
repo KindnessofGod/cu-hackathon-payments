@@ -15,7 +15,7 @@ function sb(): SupabaseClient | null {
   return client;
 }
 
-export type StageEvent = "snap" | "mode" | "lines" | "audio" | "flush" | "level" | "prompt" | "ding" | "dom" | "head" | "scroll" | "finger";
+export type StageEvent = "snap" | "mode" | "lines" | "audio" | "flush" | "level" | "prompt" | "ding" | "dom" | "head" | "scroll" | "finger" | "mdom" | "mhead" | "mscroll";
 
 /** The one studio channel: payalone.vercel.app/stage always shows the device that is in stage mode. */
 export const LIVE_KEY = "live";
@@ -85,7 +85,7 @@ export function stageListen(
     return () => {};
   }
   const chan = c.channel(`stage-${channel}`, { config: { broadcast: { self: false } } });
-  for (const e of ["snap", "mode", "lines", "audio", "flush", "level", "prompt", "ding", "dom", "head", "scroll", "finger"] as StageEvent[]) {
+  for (const e of ["snap", "mode", "lines", "audio", "flush", "level", "prompt", "ding", "dom", "head", "scroll", "finger", "mdom", "mhead", "mscroll"] as StageEvent[]) {
     chan.on("broadcast", { event: e }, (m) => on(e, (m.payload ?? {}) as Record<string, unknown>));
   }
   chan.subscribe((s) => status(s));

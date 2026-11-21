@@ -318,6 +318,11 @@ function Stage() {
   const [lastSeen, setLastSeen] = useState(0);
   const [now, setNow] = useState(0);
   const [fit, setFit] = useState({ scale: 0.5, w: 1180, h: 820 });
+  const [mfit, setMfit] = useState({ scale: 0.5, w: 390, h: 844 });
+  const [hasMerchant, setHasMerchant] = useState(false);
+  const mscreen = useRef<Screen | null>(null);
+  const mframeRef = useRef<HTMLIFrameElement>(null);
+  const marea = useRef<HTMLDivElement>(null);
   const [orb, setOrb] = useState<{ mode: OrbMode } | null>(null);
   const player = useRef<Player | null>(null);
   const micLevel = useRef(0);
@@ -379,6 +384,27 @@ function Stage() {
     if (!started || !frameRef.current) return;
     screen.current = new Screen(frameRef.current, refit);
   }, [started, refit]);
+
+  // The seller's phone on the right: same idea, a phone-shaped frame.
+  const refitM = useCallback(() => {
+    const box = marea.current;
+    if (!box) return;
+    const w = mscreen.current?.w ?? 390;
+    const h = mscreen.current?.h ?? 844;
+    const pad = 12;
+    const scale = Math.min((box.clientWidth - pad * 2) / w, (box.clientHeight - pad * 2) / h);
+    setMfit({ scale: Math.max(0.1, scale), w, h });
+  }, []);
+  useEffect(() => {
+    if (!started || !marea.current || !mframeRef.current) return;
+    mscreen.current = new Screen(mframeRef.current, refitM);
+    mscreen.current.w = 390;
+    mscreen.current.h = 844;
+    const ro = new ResizeObserver(refitM);
+    ro.observe(marea.current);
+    refitM();
+    return () => ro.disconnect();
+  }, [started, refitM]);
 
   // The 3D orb is a canvas, which the HTML copy cannot carry: draw ours exactly where the iPad has its own.
   useEffect(() => {
@@ -527,6 +553,11 @@ function Stage() {
       else if (e === "ding") player.current?.ding();
       else if (e === "level") micLevel.current = Number(p.v) || 0;
       else if (e === "head") screen.current?.setHead(p as unknown as HeadInfo);
+      else if (e === "mhead") mscreen.current?.setHead(p as unknown as HeadInfo);
+      else if (e === "mdom") {
+        setHasMerchant(true);
+        void mscreen.current?.setDom(p as unknown as { z: string; w: number; h: number; sy: number; sx: number }).catch(() => {});
+      } else if (e === "mscroll") mscreen.current?.scroll(p as unknown as { sy: number; sx: number });
       else if (e === "dom") {
         setHasScreen(true);
         void screen.current
@@ -770,6 +801,25 @@ function Stage() {
               </>
             )}
           </div>
+          <div className="stg-marea" ref={marea}>
+            <div className="stg-phone" style={{ width: mfit.w * mfit.scale + 20, height: mfit.h * mfit.scale + 20 }}>
+              <div className="stg-glass phone" style={{ width: mfit.w * mfit.scale, height: mfit.h * mfit.scale }}>
+                <iframe
+                  ref={mframeRef}
+                  title="Live copy of the seller's screen"
+                  sandbox="allow-same-origin"
+                  srcDoc={'<!doctype html><html><head><meta charset="utf-8"></head><body></body></html>'}
+                  style={{ width: mfit.w, height: mfit.h, transform: `scale(${mfit.scale})` }}
+                />
+                {!hasMerchant && (
+                  <div className="stg-wait small">
+                    <b>Mama Chris&apos;s phone</b>
+                    <span>Appears here when she opens the seller page (payalone.vercel.app/merchant).</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
           <div className="stg-mode">
             <span className={`stg-dot ${mode}`} />
             {mode === "speaking"
@@ -779,26 +829,6 @@ function Stage() {
                 : mode === "connecting"
                   ? "Connecting the voice…"
                   : "Voice ready"}
-          </div>
-          <div className="stg-brandrow">
-            <span className="stg-brand">
-          <span className="stg-logo" aria-hidden="true">
-            <svg
-              viewBox="0 0 24 24"
-              width="20"
-              height="20"
-              fill="none"
-              stroke="#c3e88f"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M12 3l7 3v5c0 4.5-3 8.2-7 10-4-1.8-7-5.5-7-10V6l7-3z" />
-              <path d="M9 12l2 2 4-4" />
-            </svg>
-          </span>
-          Pay Alone
-        </span>
           </div>
           <p className="stg-foot">
             Interledger Open Payments · test network · money moves in US
@@ -902,22 +932,27 @@ body { margin: 0; background: #eaf2e5; }
 .stg-orb-over { position: absolute; z-index: 1; pointer-events: none; }
 .stg-wait { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; gap: .5rem; color: #4b5f57; padding: 2rem; }
 .stg-wait b { font-size: 1.6rem; color: #0f3b30; }
-.stg-card { border-radius: 1.6rem; background: #fffaf1; border: 2px solid #ecd3a6; padding: 1.6rem 1.6rem 1.8rem; display: grid; gap: .45rem; box-shadow: 0 14px 34px rgba(15, 59, 48, .08); }
+.stg-card { border-radius: 1.3rem; background: #fffaf1; border: 2px solid #ecd3a6; padding: .9rem 1.2rem 1rem; display: grid; gap: .2rem; box-shadow: 0 14px 34px rgba(15, 59, 48, .08); }
 .stg-card.good { background: #0f3b30; color: #fff; }
 .stg-card-what { font-size: 1.1rem; opacity: .7; }
-.stg-card-amt { font-size: clamp(2.6rem, 4.2vw, 4.4rem); font-weight: 500; letter-spacing: -.03em; line-height: 1; }
+.stg-card-amt { font-size: clamp(2rem, 2.8vw, 3rem); font-weight: 500; letter-spacing: -.03em; line-height: 1; }
 .stg-card-amt sup { font-size: .4em; opacity: .7; vertical-align: top; position: relative; top: .3em; margin-right: .1em; }
 .stg-card-ngn { font-size: 1.3rem; font-weight: 500; opacity: .75; }
-.stg-pill { width: fit-content; margin-top: .8rem; padding: .5rem 1rem; border-radius: 999px; font-weight: 700; font-size: 1.15rem; background: #eef3ea; color: #0f3b30; }
+.stg-pill { width: fit-content; margin-top: .4rem; padding: .5rem 1rem; border-radius: 999px; font-weight: 700; font-size: 1.15rem; background: #eef3ea; color: #0f3b30; }
 .stg-pill.go { background: #e4eefc; color: #1d4f91; }
 .stg-pill.good { background: #c3e88f; color: #0f3b30; font-size: 1.5rem; }
 .stg-pill.bad { background: #fde3df; color: #a2271b; }
 .stg-card-sub { font-size: 1rem; opacity: .75; }
-.stg-mode { display: flex; align-items: center; gap: .6rem; padding: .9rem 1.2rem; border-radius: 1.2rem; background: #fffaf1; font-weight: 600; color: #5a3d10; }
+.stg-mode { display: flex; align-items: center; gap: .6rem; padding: .6rem 1rem; border-radius: 1.2rem; background: #fffaf1; font-weight: 600; color: #5a3d10; }
 .stg-dot { width: .8rem; height: .8rem; border-radius: 50%; background: #b9c7bf; }
 .stg-dot.speaking { background: #2a8fe0; animation: stg-pulse 1s ease-in-out infinite; }
 .stg-dot.listening { background: #11a88f; animation: stg-pulse 1s ease-in-out infinite; }
 @keyframes stg-pulse { 50% { transform: scale(1.5); opacity: .6; } }
+.stg-marea { flex: 1; min-height: 0; display: grid; place-items: center; }
+.stg-phone { box-sizing: border-box; padding: 10px; border-radius: 30px; background: #0a0f0d; box-shadow: 0 20px 50px rgba(90, 61, 16, .3), 0 0 0 2px rgba(224, 154, 45, .45); }
+.stg-glass.phone { border-radius: 22px; background: #fff; }
+.stg-wait.small b { font-size: 1.2rem; }
+.stg-wait.small { font-size: .9rem; padding: 1rem; }
 .stg-foot { margin: 0; font-size: .85rem; color: #7a6036; }
 
 .fp-dim { position: absolute; inset: 0; z-index: 5; display: grid; place-items: center; background: rgba(0, 0, 0, .28); animation: fp-fade .2s ease-out; }

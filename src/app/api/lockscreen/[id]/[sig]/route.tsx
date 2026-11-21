@@ -13,21 +13,24 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string; si
   const { id, sig } = await ctx.params;
   const c = /^[A-Za-z0-9_-]{6,40}$/.test(id) ? await getStore().get<Customer>("customers", id) : null;
   if (!c || sign(`lockscreen:${c.id}:${c.payCode}`).slice(0, 32) !== sig) return new Response("Not found", { status: 404 });
-  const qr = await QRCode.toDataURL(`paycode:${c.payCode}`, { errorCorrectionLevel: "H", margin: 1, width: 900, color: { dark: "#0f3b30", light: "#ffffff" } });
+  const qr = await QRCode.toDataURL(`paycode:${c.payCode}`, { errorCorrectionLevel: "H", margin: 1, width: 640, color: { dark: "#0f3b30", light: "#ffffff" } });
   const code = c.payCode.split("").join(" ");
-  const w = 1668;
-  const h = 2224; // iPad Air 3, portrait
+  // An iPad wallpaper fills the screen upright AND sideways, so iOS zooms a tall picture until the QR
+  // falls off the edge. A square picture the size of the long side (iPad Air 3: 2224) fits both ways;
+  // only its middle 1668 x 1668 shows in both, so the card sits there, below the lock-screen clock.
+  const w = 2224;
+  const h = 2224;
   return new ImageResponse(
     (
-      <div style={{ width: w, height: h, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", background: "linear-gradient(180deg, #e8f1e3 0%, #f4f8f1 55%, #dfeed6 100%)", paddingBottom: 170 }}>
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", background: "#0f3b30", borderRadius: 90, padding: "70px 90px 80px", boxShadow: "0 40px 90px rgba(15,59,48,0.35)" }}>
-          <div style={{ display: "flex", background: "#ffffff", borderRadius: 56, padding: 40 }}>
+      <div style={{ width: w, height: h, display: "flex", alignItems: "flex-start", justifyContent: "center", background: "linear-gradient(180deg, #e8f1e3 0%, #f4f8f1 55%, #dfeed6 100%)" }}>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", marginTop: 760, background: "#0f3b30", borderRadius: 70, padding: "44px 70px 48px", boxShadow: "0 30px 70px rgba(15,59,48,0.35)" }}>
+          <div style={{ display: "flex", background: "#ffffff", borderRadius: 40, padding: 28 }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={qr} width={760} height={760} alt="" />
+            <img src={qr} width={600} height={600} alt="" />
           </div>
-          <div style={{ display: "flex", marginTop: 56, color: "#c3e88f", fontSize: 54, fontWeight: 600, letterSpacing: 2 }}>PAY CODE</div>
-          <div style={{ display: "flex", marginTop: 8, color: "#ffffff", fontSize: 150, fontWeight: 700, letterSpacing: 10 }}>{code}</div>
-          <div style={{ display: "flex", marginTop: 20, color: "rgba(255,255,255,0.75)", fontSize: 44 }}>Show this to a seller. It cannot take money.</div>
+          <div style={{ display: "flex", marginTop: 30, color: "#c3e88f", fontSize: 42, fontWeight: 600, letterSpacing: 2 }}>PAY CODE</div>
+          <div style={{ display: "flex", marginTop: 4, color: "#ffffff", fontSize: 110, fontWeight: 700, letterSpacing: 8 }}>{code}</div>
+          <div style={{ display: "flex", marginTop: 10, color: "rgba(255,255,255,0.75)", fontSize: 34 }}>Show this to a seller. It cannot take money.</div>
         </div>
       </div>
     ),

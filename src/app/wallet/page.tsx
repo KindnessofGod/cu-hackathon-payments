@@ -2469,21 +2469,23 @@ function LockScreenPicture({ payCode }: { payCode: string }) {
         img.onerror = () => reject(new Error("image"));
         img.src = `data:image/svg+xml;base64,${btoa(svg)}`;
       });
-      const w = 1668;
-      const h = 2224; // iPad Air 3 portrait
+      // Square, the iPad's long side: the wallpaper must fill the screen upright and sideways, and only the
+      // middle 1668 x 1668 shows both ways, so the code sits there, below the clock.
+      const w = 2224;
+      const h = 2224;
       const canvas = document.createElement("canvas");
       canvas.width = w;
       canvas.height = h;
       const ctx = canvas.getContext("2d")!;
       ctx.fillStyle = "#ffffff";
       ctx.fillRect(0, 0, w, h);
-      const size = 900;
+      const size = 640;
       ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(img, (w - size) / 2, h - size - 420, size, size); // below the clock, above the bottom edge
+      ctx.drawImage(img, (w - size) / 2, 780, size, size);
       ctx.fillStyle = "#10172a";
       ctx.font = "bold 96px system-ui, sans-serif";
       ctx.textAlign = "center";
-      ctx.fillText(`Pay code ${payCode.split("").join(" ")}`, w / 2, h - 260);
+      ctx.fillText(`Pay code ${payCode.split("").join(" ")}`, w / 2, 780 + size + 140);
       const a = document.createElement("a");
       a.href = canvas.toDataURL("image/png");
       a.download = "pay-code-lock-screen.png";
