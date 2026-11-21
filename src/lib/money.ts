@@ -128,8 +128,54 @@ export function exceedsCap(cap: Amount, spent: Amount, next: Amount): boolean {
  * for a dollar wallet is converted at the CBN rate (rounded to the nearest cent). Returns the
  * minor units and, when converted, the naira the customer said (grouped, e.g. "5,000").
  */
+
+const SMALL: Record<string, number> = {
+  zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12,
+  thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19,
+};
+const TENS: Record<string, number> = { twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90 };
+
+/** "two thousand five hundred" -> "2500", "a thousand" -> "1000". Leaves digits ("2 thousand") alone. */
+export function numberWordsToDigits(text: string): string {
+  const words = text.split(/(\s+|-)/);
+  const out: string[] = [];
+  let i = 0;
+  while (i < words.length) {
+    const w = words[i].toLowerCase();
+    const starts = w in SMALL || w in TENS || (w === "a" && /^(hundred|thousand|million)$/i.test(words[i + 2] ?? ""));
+    if (!starts) {
+      out.push(words[i]);
+      i++;
+      continue;
+    }
+    let total = 0;
+    let current = 0;
+    let j = i;
+    let used = false;
+    for (; j < words.length; j++) {
+      const x = words[j].toLowerCase();
+      if (/^(\s+|-)$/.test(words[j]) || x === "") continue;
+      if (x in SMALL) current += SMALL[x];
+      else if (x in TENS) current += TENS[x];
+      else if (x === "a" && !used) current = 1;
+      else if (x === "hundred") current = (current || 1) * 100;
+      else if (x === "thousand") (total += (current || 1) * 1000), (current = 0);
+      else if (x === "million") (total += (current || 1) * 1_000_000), (current = 0);
+      else if (x === "and" && used) continue;
+      else break;
+      used = true;
+    }
+    // give back trailing spaces / "and" that did not belong to the number
+    let end = j;
+    while (end > i && (/^(\s+|-)$/.test(words[end - 1]) || words[end - 1].toLowerCase() === "and")) end--;
+    out.push(String(total + current));
+    i = end;
+  }
+  return out.join("");
+}
+
 export function amountFromSpeech(text: string, assetCode: string, assetScale: number): { minor: string; saidNaira: string | null } | null {
-  const t = text.toLowerCase().replace(/,/g, "");
+  const t = numberWordsToDigits(text.toLowerCase().replace(/,/g, ""));
   const m = t.match(/\d+(\.\d+)?/);
   if (!m) return null;
   let num = m[0];

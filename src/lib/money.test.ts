@@ -77,3 +77,22 @@ describe("amountFromSpeech (naira by default)", () => {
     expect(f("1 naira")).toBeNull(); // less than one cent
   });
 });
+
+import { numberWordsToDigits } from "./money";
+describe("amounts said in words", () => {
+  it("reads number words", () => {
+    expect(numberWordsToDigits("two thousand naira")).toBe("2000 naira");
+    expect(numberWordsToDigits("ten thousand naira")).toBe("10000 naira");
+    expect(numberWordsToDigits("two thousand five hundred naira")).toBe("2500 naira");
+    expect(numberWordsToDigits("a thousand naira")).toBe("1000 naira");
+    expect(numberWordsToDigits("one hundred and fifty thousand naira")).toBe("150000 naira");
+    expect(numberWordsToDigits("twenty-five dollars")).toBe("25 dollars");
+    expect(numberWordsToDigits("2 thousand naira")).toBe("2 thousand naira");
+  });
+  it("turns spoken naira into the dollar amount", () => {
+    expect(amountFromSpeech("two thousand naira", "USD", 2)?.saidNaira).toBe("2,000");
+    expect(amountFromSpeech("ten thousand naira", "USD", 2)?.minor).toBe("739");
+    expect(amountFromSpeech("2 thousand naira", "USD", 2)?.saidNaira).toBe("2,000");
+    expect(amountFromSpeech("two k", "USD", 2)?.saidNaira).toBe("2,000");
+  });
+});
