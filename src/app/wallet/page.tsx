@@ -1759,29 +1759,25 @@ function Home(props: {
         </header>
 
         {customer.balance && (
-          <section className="balance-hero" aria-label="Account balance">
-            <span className="bh-clip" aria-hidden="true">
-              <span className="bh-rings" />
-            </span>
-            <div className="bh-main">
-              <span className="bh-label">
-                <span className="bh-dot" aria-hidden="true" /> Account balance
+          <section className="bal-card" aria-label="Account balance">
+            <div className="bal-top">
+              <span className="bal-title">
+                <span className="chip-coin" aria-hidden="true">
+                  {symbolOf(customer.balance.amount.assetCode)}
+                </span>
+                Account balance
               </span>
+              <button className="bal-say" onClick={() => say(`Your balance is about ${speakAmount(customer.balance!.amount)}.`)} aria-label="Say my balance aloud">
+                <Icon name="speaker" size={20} />
+              </button>
+            </div>
+            <div className="bal-bottom">
+              <div className="bal-week">
+                <span className="bal-pill">−{formatAmount({ value: week.total, assetCode: customer.assetCode, assetScale: customer.assetScale })}</span>
+                <span>spent this week{active ? ` · ${formatAmount(active.left)} left of limit` : ""}</span>
+              </div>
               <Money a={customer.balance.amount} size="xl" />
             </div>
-            <div className="bh-stats">
-              <div>
-                <span>Spent this week</span>
-                <b>{formatAmount({ value: week.total, assetCode: customer.assetCode, assetScale: customer.assetScale })}</b>
-              </div>
-              <div>
-                <span>Left of limit</span>
-                <b>{active ? formatAmount(active.left) : "No limit"}</b>
-              </div>
-            </div>
-            <button className="bh-say" onClick={() => say(`Your balance is about ${speakAmount(customer.balance!.amount)}.`)} aria-label="Say my balance aloud">
-              <Icon name="speaker" size={26} />
-            </button>
           </section>
         )}
 
