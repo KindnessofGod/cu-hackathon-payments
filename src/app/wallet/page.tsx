@@ -1759,13 +1759,28 @@ function Home(props: {
         </header>
 
         {customer.balance && (
-          <section className="card balance-top" aria-label="Account balance">
-            <div>
-              <span className="muted">Account balance</span>
+          <section className="balance-hero" aria-label="Account balance">
+            <span className="bh-clip" aria-hidden="true">
+              <span className="bh-rings" />
+            </span>
+            <div className="bh-main">
+              <span className="bh-label">
+                <span className="bh-dot" aria-hidden="true" /> Account balance
+              </span>
               <Money a={customer.balance.amount} size="xl" />
             </div>
-            <button className="pill ghost" onClick={() => say(`Your balance is about ${speakAmount(customer.balance!.amount)}.`)}>
-              <Icon name="speaker" size={20} /> Say it aloud
+            <div className="bh-stats">
+              <div>
+                <span>Spent this week</span>
+                <b>{formatAmount({ value: week.total, assetCode: customer.assetCode, assetScale: customer.assetScale })}</b>
+              </div>
+              <div>
+                <span>Left of limit</span>
+                <b>{active ? formatAmount(active.left) : "No limit"}</b>
+              </div>
+            </div>
+            <button className="bh-say" onClick={() => say(`Your balance is about ${speakAmount(customer.balance!.amount)}.`)} aria-label="Say my balance aloud">
+              <Icon name="speaker" size={26} />
             </button>
           </section>
         )}

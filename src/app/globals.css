@@ -469,7 +469,34 @@ video.scan { width: 100%; border-radius: 16px; border: 2px solid var(--line); ba
 .takeover .approve.pay-sheet .avatar { width: 4.4rem; height: 4.4rem; font-size: 1.4rem; }
 .takeover .talk { background: rgba(255, 255, 255, 0.85); }
 
-/* Account balance strip at the top of the home screen */
-.balance-top { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
-.balance-top > div { display: flex; flex-direction: column; gap: 0.2rem; }
-.balance-top .pill.ghost { color: var(--deep, #0b3b2e); border: 1.5px solid rgba(11, 59, 46, 0.25); background: transparent; }
+/* Account balance at the top of the home screen: deep forest glass with a lime glow. */
+.balance-hero {
+  position: relative; display: flex; align-items: center; gap: 1.5rem; flex-wrap: wrap;
+  margin-bottom: 1rem; padding: 1.25rem 1.5rem; border-radius: 28px; color: #fff;
+  background:
+    radial-gradient(120% 140% at 0% 0%, rgba(195, 232, 143, 0.22), transparent 55%),
+    radial-gradient(90% 120% at 100% 100%, rgba(17, 168, 143, 0.35), transparent 60%),
+    linear-gradient(135deg, #0f3b30 0%, #0b2c24 60%, #0e4a3b 100%);
+  box-shadow: 0 22px 50px rgba(15, 59, 48, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+.bh-clip { position: absolute; inset: 0; overflow: hidden; border-radius: inherit; pointer-events: none; }
+.bh-rings {
+  position: absolute; right: -60px; top: 50%; width: 320px; height: 320px; transform: translateY(-50%); pointer-events: none;
+  background: repeating-radial-gradient(circle, rgba(195, 232, 143, 0.13) 0 1.5px, transparent 1.5px 26px);
+  mask-image: radial-gradient(circle, #000 30%, transparent 70%); -webkit-mask-image: radial-gradient(circle, #000 30%, transparent 70%);
+}
+.bh-main { position: relative; display: grid; gap: 0.25rem; flex: 1 1 15rem; }
+.bh-main .money { color: #fff; }
+.bh-main .money sup { color: var(--lime); }
+.bh-main .money > span:last-child { color: var(--lime); opacity: 0.9 !important; }
+.bh-label { display: inline-flex; align-items: center; gap: 0.5rem; width: fit-content; padding: 0.3rem 0.75rem; border-radius: 999px;
+  background: rgba(195, 232, 143, 0.14); color: var(--lime); font-weight: 700; font-size: 0.85rem; letter-spacing: 0.02em; }
+.bh-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--lime); box-shadow: 0 0 0 4px rgba(195, 232, 143, 0.2); }
+.bh-stats { position: relative; display: flex; gap: 0.75rem; }
+.bh-stats > div { display: grid; gap: 0.2rem; padding: 0.7rem 1rem; border-radius: 18px; min-width: 9rem;
+  background: rgba(255, 255, 255, 0.07); border: 1px solid rgba(255, 255, 255, 0.1); backdrop-filter: blur(6px); }
+.bh-stats span { font-size: 0.8rem; opacity: 0.75; }
+.bh-stats b { font-size: 1.15rem; }
+.bh-say { position: relative; flex: none; width: 3.6rem; height: 3.6rem; border-radius: 50%; border: 0; cursor: pointer;
+  display: grid; place-items: center; background: var(--lime); color: var(--deep); box-shadow: 0 8px 24px rgba(195, 232, 143, 0.35); }
+@media (max-width: 640px) { .bh-stats { width: 100%; } .bh-stats > div { flex: 1; min-width: 0; } }
