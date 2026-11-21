@@ -2519,47 +2519,36 @@ function PayCodeSheet({ payCode, say, onClose }: { payCode: string; say: (t: str
 
 function LockScreenPicture({ payCode }: { payCode: string }) {
   const [problem, setProblem] = useState("");
+  const [busy, setBusy] = useState(false);
 
+  // A home-screen web app on iPad cannot download files, so the picture goes through the share sheet
+  // ("Save Image"); where that is missing, it opens so the person can touch and hold it to save.
   async function make() {
     setProblem("");
+    setBusy(true);
     try {
-      const svg = await (await fetch("/api/wallet/paycode", { cache: "no-store" })).text();
-      const img = new Image();
-      await new Promise<void>((resolve, reject) => {
-        img.onload = () => resolve();
-        img.onerror = () => reject(new Error("image"));
-        img.src = `data:image/svg+xml;base64,${btoa(svg)}`;
-      });
-      // Square, the iPad's long side: the wallpaper must fill the screen upright and sideways, and only the
-      // middle 1668 x 1668 shows both ways, so the code sits there, below the clock.
-      const w = 2224;
-      const h = 2224;
-      const canvas = document.createElement("canvas");
-      canvas.width = w;
-      canvas.height = h;
-      const ctx = canvas.getContext("2d")!;
-      ctx.fillStyle = "#ffffff";
-      ctx.fillRect(0, 0, w, h);
-      const size = 640;
-      ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(img, (w - size) / 2, 780, size, size);
-      ctx.fillStyle = "#10172a";
-      ctx.font = "bold 96px system-ui, sans-serif";
-      ctx.textAlign = "center";
-      ctx.fillText(`Pay code ${payCode.split("").join(" ")}`, w / 2, 780 + size + 140);
-      const a = document.createElement("a");
-      a.href = canvas.toDataURL("image/png");
-      a.download = "pay-code-lock-screen.png";
-      a.click();
+      const { url } = await api<{ url: string }>("/api/wallet/lockscreen");
+      const blob = await (await fetch(url, { cache: "no-store" })).blob();
+      const file = new File([blob], `pay-code-${payCode}.png`, { type: "image/png" });
+      const nav = navigator as Navigator & { canShare?: (d: { files: File[] }) => boolean };
+      if (nav.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file], title: "My pay code" }).catch((e: unknown) => {
+          if (!(e instanceof Error && e.name === "AbortError")) throw e;
+        });
+      } else {
+        window.open(url, "_blank");
+      }
     } catch {
-      setProblem("Could not make the picture on this device.");
+      setProblem("Could not make the picture. Use “Open the lock-screen picture” instead.");
+    } finally {
+      setBusy(false);
     }
   }
 
   return (
     <>
-      <button className="wide secondary" onClick={() => void make()}>
-        Make a lock-screen picture
+      <button className="wide secondary" onClick={() => void make()} disabled={busy}>
+        {busy ? "Making the picture…" : "Save my pay code picture"}
       </button>
       {problem && <p role="alert">{problem}</p>}
     </>
