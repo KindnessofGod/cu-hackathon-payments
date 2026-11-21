@@ -15,6 +15,8 @@ export type LiveSession = {
   context: (text: string) => void;
   /** Sends a message as if from the customer's side, so the agent answers it now (app notices). */
   nudge: (text: string) => void;
+  /** Re-opens the microphone and wakes the sound (after the fingerprint sheet, or when the mic went silent). */
+  refreshAudio: (why: string) => Promise<void>;
 };
 
 export type LiveOptions = {
@@ -368,5 +370,23 @@ export async function startLive(o: LiveOptions): Promise<LiveSession> {
     levels: () => ({ input: c.getInputVolume(), output: c.getOutputVolume() }),
     context: (text: string) => c.sendContextualUpdate(text),
     nudge: (text: string) => c.sendUserMessage(text),
+    refreshAudio: async (why: string) => {
+      // iPadOS can pause a page's audio when a system sheet (Touch ID) appears; it does not always come back.
+      const inner = c as unknown as { input?: { context?: AudioContext }; output?: { context?: AudioContext } };
+      for (const ctx of [inner.input?.context, inner.output?.context]) {
+        try {
+          if (ctx && ctx.state !== "running") await ctx.resume();
+        } catch {
+          // keep going
+        }
+      }
+      try {
+        await c.changeInputDevice({});
+      } catch (e) {
+        report(`mic refresh failed (${why})`, e);
+        return;
+      }
+      report(`mic refreshed (${why})`);
+    },
   };
 }

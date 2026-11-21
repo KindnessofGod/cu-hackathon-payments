@@ -472,6 +472,8 @@ export default function WalletPage() {
             // would keep asking for a finger that was already given.
             approve_payment: async () => {
               const r = await (liveHandlers.current.approve?.() ?? Promise.resolve(nothingWaiting()));
+              // The Touch ID sheet can leave the microphone paused on iPad: reopen it.
+              setTimeout(() => void liveSession.current?.refreshAudio("after fingerprint"), 400);
               liveSession.current?.context(
                 r.startsWith("paid")
                   ? `RESULT: the payment is finished and PAID. ${r} Do not ask for a tap or the fingerprint again. Tell the customer plainly that it is paid.`
@@ -559,10 +561,29 @@ export default function WalletPage() {
     document.addEventListener("visibilitychange", onVis);
     return () => document.removeEventListener("visibilitychange", onVis);
   }, [refresh]);
+  // A microphone that went dead (exactly zero for several seconds while listening) is reopened.
+  useEffect(() => {
+    if (liveMode !== "listening") return;
+    let zeroFor = 0;
+    let lastFix = 0;
+    const t = setInterval(() => {
+      const v = liveSession.current?.levels().input ?? 1;
+      zeroFor = v === 0 ? zeroFor + 500 : 0;
+      if (zeroFor >= 6000 && Date.now() - lastFix > 15000) {
+        lastFix = Date.now();
+        zeroFor = 0;
+        void liveSession.current?.refreshAudio("silent microphone");
+      }
+    }, 500);
+    return () => clearInterval(t);
+  }, [liveMode]);
+
   // Safari may hold back the voice of a call the app started by itself: any tap lets it play.
   useEffect(() => {
     const onTap = () => {
-      if (liveActive.current) nudgeAudio();
+      if (!liveActive.current) return;
+      nudgeAudio();
+      void liveSession.current?.refreshAudio("tap");
     };
     document.addEventListener("pointerdown", onTap);
     return () => document.removeEventListener("pointerdown", onTap);
