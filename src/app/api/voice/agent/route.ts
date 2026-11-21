@@ -99,7 +99,7 @@ export async function GET(req: Request) {
     let first = HELLO[lang];
     // Just back from the wallet's page with a new limit: say so first.
     if (active && Date.now() - Date.parse(active.grantedAt) < 3 * 60_000) {
-      first = `Welcome back. Your new spending limit is set: ${speakAmount(active.limit)} each ${active.every}. What would you like to do next?`;
+      first = lang === "pcm" ? `Welcome back. Your new limit don set: ${speakAmount(active.limit)} every ${active.every}. Wetin you wan do next?` : `Welcome back. Your new spending limit is set: ${speakAmount(active.limit)} each ${active.every}. What would you like to do next?`;
     }
     if (r && r.quote) {
       const { receiveAmount, debitAmount } = r.quote;
