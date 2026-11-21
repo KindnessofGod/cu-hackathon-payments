@@ -722,9 +722,12 @@ export default function WalletPage() {
       if (pending.id === sentByVoice.current) return; // the customer asked for it by voice; the agent is already talking about it
       if (liveActive.current && liveFor.current === pending.id) return; // the agent is already talking about it
       if (liveActive.current && liveFor.current !== pending.id) {
-        // A seller asked during a conversation: start again about this request, so the agent has its facts.
-        liveSession.current?.end();
-        setTimeout(() => void startLiveVoice(pending.id), 800);
+        // A seller asked during a conversation: the call goes on (hanging up would cut off what the agent is
+        // saying, such as "Congratulations"); the agent is told the new request's facts instead.
+        liveFor.current = pending.id;
+        liveSession.current?.context(
+          `NEW REQUEST, waiting now: ${requestSentence(pending)} First finish what you were saying (if a payment was just paid, the congratulations comes first). Then tell the customer about this new request in their language and ask if they want to pay it. If they say yes, follow step 3 and call approve_payment. Never pay it without their clear yes.`,
+        );
         return;
       }
       if (prefs.on && prefs.natural && prefs.auto && !liveActive.current) {
