@@ -184,14 +184,21 @@ export async function recentCustomers() {
   return [...seen.values()];
 }
 
-export async function createRequest(payCode: string, amountMajor: string): Promise<PaymentRequest> {
+/** currency "NGN": the seller typed naira; on a dollar wallet it becomes dollars at the CBN rate. */
+export async function createRequest(payCode: string, amountMajor: string, currency?: "NGN"): Promise<PaymentRequest> {
   const code = payCode.replace(/\D/g, "");
   const customer = (await store().list<Customer>("customers")).find((c) => c.payCode === code);
   if (!customer) throw new DomainError("not_found", "No customer has that pay code. Check the six digits.");
 
   const g = gateway("merchant");
   const wallet = await g.getWallet(merchantWalletUrl());
-  const minor = parseMajor(amountMajor, wallet.assetScale);
+  const typed = amountMajor.trim().replace(/,/g, "");
+  const minor =
+    currency === "NGN" && wallet.assetCode === "USD"
+      ? /^\d+(\.\d{1,2})?$/.test(typed)
+        ? (amountFromSpeech(typed, wallet.assetCode, wallet.assetScale)?.minor ?? null)
+        : null
+      : parseMajor(amountMajor, wallet.assetScale);
   if (!minor) throw new DomainError("bad_input", "Enter an amount greater than zero, for example 2000.");
 
   const now = Date.now();

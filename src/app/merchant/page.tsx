@@ -50,6 +50,7 @@ export default function MerchantPage() {
   const [loadError, setLoadError] = useState<ApiError | null>(null);
   const [payCode, setPayCode] = useState("");
   const [amount, setAmount] = useState("");
+  const [cur, setCur] = useState<"NGN" | "USD">("NGN");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
   const [view, setView] = useState<View | null>(null);
@@ -91,7 +92,7 @@ export default function MerchantPage() {
     setBusy(true);
     setError(null);
     try {
-      const { id } = await api<{ id: string }>("/api/merchant/requests", { method: "POST", body: { payCode, amount } });
+      const { id } = await api<{ id: string }>("/api/merchant/requests", { method: "POST", body: { payCode, amount, currency: cur } });
       setView(await api<View>(`/api/merchant/requests/${id}`));
       setTimeout(() => statusRef.current?.focus(), 50);
     } catch (err) {
@@ -107,6 +108,8 @@ export default function MerchantPage() {
     setPollError(null);
     load();
   }
+
+  const naira = data?.merchant.assetCode === "USD" && cur === "NGN";
 
   return (
     <>
@@ -172,22 +175,33 @@ export default function MerchantPage() {
                   </div>
                 </fieldset>
               )}
-              <label htmlFor="amount">Amount in {data.merchant.assetCode}</label>
+              {data.merchant.assetCode === "USD" && (
+                <div role="radiogroup" aria-label="Currency" style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                  {(["NGN", "USD"] as const).map((c) => (
+                    <button key={c} type="button" role="radio" aria-checked={cur === c} className={cur === c ? "seller" : "secondary"} onClick={() => setCur(c)} style={{ flex: 1 }}>
+                      {c === "NGN" ? "₦ Naira" : "$ Dollars"}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <label htmlFor="amount">Amount in {naira ? "naira" : data.merchant.assetCode}</label>
               <div className="money-input">
-                <span aria-hidden="true">{data.merchant.assetCode}</span>
+                <span aria-hidden="true">{naira ? "₦" : data.merchant.assetCode}</span>
                 <input
                   id="amount"
                   inputMode="decimal"
                   autoComplete="off"
                   required
-                  placeholder="0.00"
+                  placeholder={naira ? "2000" : "0.00"}
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
                 />
               </div>
               {data.merchant.assetCode === "USD" && /^\d+(\.\d{1,2})?$/.test(amount.trim()) && Number(amount) > 0 && (
                 <p className="muted" style={{ marginTop: 6 }}>
-                  ≈ ₦{nairaOf({ value: String(Math.round(Number(amount) * 100)), assetCode: "USD", assetScale: 2 })} at the CBN rate of 16 Nov (₦1,353.97 per $1). The test network runs in dollars.
+                  {naira
+                    ? `≈ $${(Number(amount) / 1353.97).toFixed(2)} on the test network, which runs in dollars (CBN rate of 16 Nov, ₦1,353.97 per $1).`
+                    : `≈ ₦${nairaOf({ value: String(Math.round(Number(amount) * 100)), assetCode: "USD", assetScale: 2 })} at the CBN rate of 16 Nov (₦1,353.97 per $1). The test network runs in dollars.`}
                 </p>
               )}
               {error && (
