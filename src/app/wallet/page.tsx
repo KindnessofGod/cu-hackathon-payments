@@ -1758,6 +1758,18 @@ function Home(props: {
           </div>
         </header>
 
+        {customer.balance && (
+          <section className="card balance-top" aria-label="Account balance">
+            <div>
+              <span className="muted">Account balance</span>
+              <Money a={customer.balance.amount} size="xl" />
+            </div>
+            <button className="pill ghost" onClick={() => say(`Your balance is about ${speakAmount(customer.balance!.amount)}.`)}>
+              <Icon name="speaker" size={20} /> Say it aloud
+            </button>
+          </section>
+        )}
+
         {notice && (
           <div className={`status ${notice.good ? "good" : "bad"}`} role="status" aria-live="polite">
             <span className="status-icon">
@@ -1793,20 +1805,8 @@ function Home(props: {
                 <span className="coin" aria-hidden="true">
                   {symbolOf(customer.assetCode)}
                 </span>
-                {customer.balance ? (
-                  <>
-                    <span className="frame-label">Account balance</span>
-                    <Money a={customer.balance.amount} size="xl" />
-                    <span className="frame-label">
-                      {active ? `Left to spend this ${active.every}: ${formatAmount(active.left)} of ${formatAmount(active.limit)}` : "No spending limit set"}
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    {active ? <Money a={active.left} size="xl" /> : <span className="money xl">No limit</span>}
-                    <span className="frame-label">{active ? `Left to spend this ${active.every}, of ${formatAmount(active.limit)}` : "Set a spending limit below"}</span>
-                  </>
-                )}
+                {active ? <Money a={active.left} size="xl" /> : <span className="money xl">No limit</span>}
+                <span className="frame-label">{active ? `Left to spend this ${active.every}, of ${formatAmount(active.limit)}` : "Set a spending limit below"}</span>
                 {active && (
                   <span className="frame-bar" aria-hidden="true">
                     <span style={{ width: `${leftPct}%` }} />
@@ -1816,11 +1816,7 @@ function Home(props: {
               <div className="pill-row">
                 <button
                   className="pill ghost"
-                  onClick={() =>
-                    say(
-                      `${customer.balance ? `Your balance is about ${speakAmount(customer.balance.amount)}. ` : ""}${active ? `${speakAmount(active.left)} is left to spend this ${active.every}.` : "You have no spending limit set."}`,
-                    )
-                  }
+                  onClick={() => say(active ? `${speakAmount(active.left)} is left to spend this ${active.every}.` : "You have no spending limit set.")}
                 >
                   <Icon name="speaker" size={20} /> Say it aloud
                 </button>

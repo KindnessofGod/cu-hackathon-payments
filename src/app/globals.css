@@ -468,3 +468,8 @@ video.scan { width: 100%; border-radius: 16px; border: 2px solid var(--line); ba
 .takeover .approve.pay-sheet .new-tag { margin-top: 0.2rem; }
 .takeover .approve.pay-sheet .avatar { width: 4.4rem; height: 4.4rem; font-size: 1.4rem; }
 .takeover .talk { background: rgba(255, 255, 255, 0.85); }
+
+/* Account balance strip at the top of the home screen */
+.balance-top { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
+.balance-top > div { display: flex; flex-direction: column; gap: 0.2rem; }
+.balance-top .pill.ghost { color: var(--deep, #0b3b2e); border: 1.5px solid rgba(11, 59, 46, 0.25); background: transparent; }
