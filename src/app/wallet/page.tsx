@@ -56,7 +56,9 @@ const LANGUAGE_NUDGE: Record<SpokenLang, string> = {
 };
 
 /** How long the fingerprint prompt stays open before the app closes it as not recognised. */
-const FINGER_WAIT_MS = 15000;
+const FINGER_WAIT_MS = 20000;
+/** A fingerprint that does not go through is asked for again by itself this many times before the voice is told. */
+const FINGER_TRIES = 3;
 
 /** Column heights for the balance card's dot pattern (design A), rising to the right edge. */
 const BAL_DOTS = [1, 2, 2, 3, 2, 4, 3, 3, 5, 4, 3, 5, 6, 4, 5, 6, 7, 6, 5, 6, 7, 6, 7, 7, 6, 7, 7, 7, 7, 7, 7, 7, 7];
@@ -229,6 +231,8 @@ interface Live {
   standby: boolean;
   /** After a payment: what is left of the limit, from fresh records, as a sentence for the agent. */
   leftNow: () => Promise<string>;
+  /** Opens the fingerprint again for the waiting payment (a tap after a failed try); the voice hears the result. */
+  approveAgain: () => Promise<string>;
 }
 
 const voice = new BrowserSpeechOutput();
@@ -616,6 +620,7 @@ export default function WalletPage() {
     start: startLiveVoice,
     end: () => void liveSession.current?.end(),
     standby,
+    approveAgain: () => runApprove(),
     leftNow: async () => {
       const st = await refresh();
       const c = st?.customer?.cap;
@@ -1181,6 +1186,7 @@ function Approve({
   const toolText = useRef("");
   const voiceDown = useRef(false); // the voice could not start here; taps go straight to paying
   const armedRef = useRef(false);
+  const retryByTap = useRef(false);
   armedRef.current = armed;
   const ready = Boolean(request.challenge && request.debitAmount);
   const sentence = useMemo(() => requestSentence(request), [request]);
@@ -1210,7 +1216,14 @@ function Approve({
       approve: async () => {
         toolText.current = "";
         void sayHowTo();
-        const s = await activateRef.current(true);
+        let s = await activateRef.current(true);
+        // A fingerprint that did not go through opens again by itself, without waiting for the voice.
+        for (let tryNo = 2; tryNo <= FINGER_TRIES && s.startsWith("not paid: the fingerprint"); tryNo++) {
+          setMessage("Not recognised. Try again: rest your finger on the Home button.");
+          if (prefs.natural) await hosted.play({ what: "howto", how: "finger", id: request.id, lang: prefs.lang }, "Try again. Rest your finger on the Home button.");
+          else await voice.speak("Try again. Rest your finger on the Home button.");
+          s = await activateRef.current(true);
+        }
         if (s === "done") return toolText.current || "not paid: the wallet did not answer.";
         if (s === "waiting") {
           setMessage(needsFinger ? "Tap the screen once, then rest your finger on the Home button." : "Tap the screen once to pay.");
@@ -1374,6 +1387,12 @@ function Approve({
     }
     if (hearing) return "not paid: busy.";
     // A tap during a live conversation only matters once the agent has asked for the fingerprint.
+    // After a fingerprint that did not go through, a tap tries again, through the voice's own path.
+    if (!spoken && quiet && !armedRef.current && retryByTap.current) {
+      retryByTap.current = false;
+      void live.approveAgain();
+      return "";
+    }
     if (!spoken && quiet && !armedRef.current) return "";
     // First tap with voice answers on: start talking. A tap while armed goes straight on.
     // If the voice is not available on this device (no microphone, voice service down), taps pay instead.
@@ -1447,13 +1466,14 @@ function Approve({
         stageSend("finger", { state: real ? "fail" : "closed", id: request.id });
         if (real || !spoken || useNative) {
           setArmed(false);
+          retryByTap.current = true; // one tap anywhere opens the fingerprint again, as often as needed
           const text = timedOut
-            ? "Not paid. That fingerprint was not recognised. Nothing was paid. Say pay to try again."
-            : "Not paid. The fingerprint was not confirmed. Nothing was paid. Say pay to try again.";
+            ? "Not paid yet. That fingerprint was not recognised. Tap the screen or say pay to try again."
+            : "Not paid yet. The fingerprint was not confirmed. Tap the screen or say pay to try again.";
           setMessage(text);
           const forAgent = timedOut
-            ? "not paid: the fingerprint was not recognised, so the app closed the fingerprint prompt. Nothing was paid. Tell the customer in one short sentence, then ask if they want to try again (if yes, call approve_payment again)."
-            : "not paid: the fingerprint was not confirmed (the prompt was cancelled). Nothing was paid. Tell the customer in one short sentence, then ask if they want to try again (if yes, call approve_payment again).";
+            ? "not paid: the fingerprint did not go through (tried several times). Nothing was paid and the payment is STILL WAITING. Tell the customer in one short sentence, then ask if they want to try again. If they say yes, try, again, ok, pay, or anything like it, call approve_payment AGAIN at once. They can try as many times as they want; never cancel the payment yourself. A tap on the screen also tries again."
+            : "not paid: the fingerprint was not confirmed (the prompt was cancelled). Nothing was paid and the payment is STILL WAITING. Tell the customer in one short sentence, then ask if they want to try again. If they say yes, try, again, ok, pay, or anything like it, call approve_payment AGAIN at once. They can try as many times as they want; never cancel the payment yourself. A tap on the screen also tries again.";
           if (quiet) settleTool(forAgent);
           else say(text);
           return forAgent;
