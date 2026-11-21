@@ -525,6 +525,16 @@ export async function handleCallback(
 
   if (session.purpose === "cap") {
     const now = Date.now();
+    // A new limit replaces the old one: the old permission is cancelled on the wallet, so only one stands.
+    const old = customer.cap;
+    if (old?.status === "active") {
+      try {
+        const o = JSON.parse(open(old.sealed)) as CapSecrets;
+        await gateway("wallet").cancelGrant({ continueUri: o.continueUri, continueToken: o.continueToken });
+      } catch {
+        // the old permission may already have expired; the new one is set either way
+      }
+    }
     customer.cap = {
       limit: session.limit,
       interval: session.interval!,

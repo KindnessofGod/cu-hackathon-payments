@@ -2060,6 +2060,7 @@ function Limit({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
   const [confirmStop, setConfirmStop] = useState(false);
+  const [changing, setChanging] = useState(false);
 
   async function setLimit(e: React.FormEvent) {
     e.preventDefault();
@@ -2104,7 +2105,7 @@ function Limit({
         </span>
         <h2 id="limit-h">Spending limit</h2>
       </div>
-      {cap?.status === "active" ? (
+      {cap?.status === "active" && !changing ? (
         <>
           <p className="muted">Left this {cap.every}</p>
           <p className="amount">{formatAmount(cap.left)}</p>
@@ -2122,12 +2123,28 @@ function Limit({
           >
             <Icon name="speaker" size={22} /> Say what is left aloud
           </button>
+          <button
+            className="wide secondary"
+            onClick={() => {
+              setChanging(true);
+              setAmount("");
+              setEvery(cap.every);
+            }}
+          >
+            <Icon name="shield" size={22} /> Change my limit
+          </button>
           <button className="wide danger" disabled={busy} onClick={() => void stop()}>
             <Icon name="stop" size={22} /> {confirmStop ? "Tap again to stop everything" : "Stop everything"}
           </button>
         </>
       ) : (
         <form onSubmit={setLimit}>
+          {changing && cap?.status === "active" && (
+            <p>
+              Your limit now: <strong>{formatAmount(cap.limit)}</strong> every {cap.every}. Enter the new limit, then confirm it on your wallet&apos;s page. The old
+              limit stays until you do, and is cancelled once the new one is set.
+            </p>
+          )}
           <p>
             {cap?.status === "stopped" ? "You stopped all payments. " : ""}
             Set a limit once on your wallet&apos;s own page. After that you approve each payment here, and your wallet refuses anything over the limit.
@@ -2149,8 +2166,13 @@ function Limit({
             <option value="day">Day</option>
           </select>
           <button className="wide" disabled={busy} style={{ marginTop: "1rem" }}>
-            {busy ? "Opening your wallet…" : "Set my limit on the wallet's page"}
+            {busy ? "Opening your wallet…" : changing ? "Set my new limit on the wallet's page" : "Set my limit on the wallet's page"}
           </button>
+          {changing && (
+            <button type="button" className="wide secondary" onClick={() => setChanging(false)}>
+              Keep my current limit
+            </button>
+          )}
         </form>
       )}
       {error && (
