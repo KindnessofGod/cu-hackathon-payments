@@ -1835,7 +1835,8 @@ function Home(props: {
               <b>Spent this week</b>
               {active && <span className="pct">{pct}%</span>}
             </div>
-            {active ? <Money a={active.spent} size="lg" /> : <Money a={{ value: week.total, assetCode: customer.assetCode, assetScale: customer.assetScale }} size="lg" />}
+            {/* Real payments this week from the history: a new limit starts a new permission, not a new week. */}
+            <Money a={{ value: week.total, assetCode: customer.assetCode, assetScale: customer.assetScale }} size="lg" />
             <span className="muted">
               {week.paid} paid · {week.refused} not paid
             </span>

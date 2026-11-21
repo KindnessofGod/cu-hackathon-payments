@@ -1,5 +1,6 @@
 import { balanceEstimate, capSummary, customerHistory, getRequestFor, isOpen, payeesOf } from "@/lib/domain";
 import { fail, requireCustomer } from "@/lib/http";
+import { getStore } from "@/lib/store";
 import { exceedsCap, remainingOfCap, speakAmount } from "@/lib/money";
 import { growSummary, growText } from "@/lib/grow";
 import { askingSentence, isLang, type Lang } from "@/lib/voice/sentences";
@@ -79,9 +80,27 @@ export async function GET(req: Request) {
             ? "Open the Pay Alone app on this iPad to approve with your fingerprint."
             : "Tap the screen once to pay.";
 
+    // The conversation before the app reloaded (the wallet's page for a new limit ends the call):
+    // the last lines of this customer's latest call in the past 20 minutes, so the agent can carry on.
+    type Line = { at: string; who: "you" | "app" | "tool"; text: string };
+    const convs = (await getStore().list<{ customerId: string; updatedAt: string; lines: Line[] }>("conversations"))
+      .filter((c) => c.customerId === customer.id && Date.now() - Date.parse(c.updatedAt) < 20 * 60_000)
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    const recentChat = convs[0]
+      ? convs[0].lines
+          .filter((l) => l.who !== "tool")
+          .slice(-8)
+          .map((l) => `${l.who === "you" ? "Customer" : "You"}: ${l.text.replace(/\[[^\]]*\]\s*/g, "")}`)
+          .join("\n")
+      : "none";
+
     // The waiting payment, if any. Amounts from the wallet's quote.
     let pending = "none";
     let first = HELLO[lang];
+    // Just back from the wallet's page with a new limit: say so first.
+    if (active && Date.now() - Date.parse(active.grantedAt) < 3 * 60_000) {
+      first = `Welcome back. Your new spending limit is set: ${speakAmount(active.limit)} each ${active.every}. What would you like to do next?`;
+    }
     if (r && r.quote) {
       const { receiveAmount, debitAmount } = r.quote;
       const over = Boolean(active && exceedsCap(active.limit, active.spent, debitAmount));
@@ -132,6 +151,7 @@ export async function GET(req: Request) {
           approve_how: approveHow,
           grow_text: grow,
           balance_text: balanceText,
+          recent_chat: recentChat,
         },
       },
       { headers: { "cache-control": "no-store" } },
