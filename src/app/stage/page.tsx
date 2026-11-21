@@ -648,26 +648,15 @@ function Stage() {
 
   return (
     <main className="stg">
-      <header className="stg-top">
-        <span className="stg-brand">
-          <span className="stg-logo" aria-hidden="true">
-            <svg
-              viewBox="0 0 24 24"
-              width="20"
-              height="20"
-              fill="none"
-              stroke="#c3e88f"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M12 3l7 3v5c0 4.5-3 8.2-7 10-4-1.8-7-5.5-7-10V6l7-3z" />
-              <path d="M9 12l2 2 4-4" />
-            </svg>
-          </span>
-          Pay Alone
-        </span>
-        <span className={`stg-live ${test ? "test" : live ? "on" : ""}`}>
+      <section className="stg-grid">
+        <div className="stg-left">
+          <div className="stg-tag">
+            <span className="stg-avatar">{name.slice(0, 1).toUpperCase()}</span>
+            <span className="stg-tag-text">
+              <b>{name}</b>
+              <small>The customer · she is blind · her iPad</small>
+            </span>
+            <span className={`stg-live ${test ? "test" : live ? "on" : ""}`}>
           {test
             ? "TEST PATTERN · not live · made-up payment"
             : live
@@ -676,11 +665,6 @@ function Stage() {
                 ? "Waiting for the iPad…"
                 : `Connecting (${link})…`}
         </span>
-      </header>
-      <section className="stg-grid">
-        <div className="stg-left">
-          <div className="stg-label">
-            <b>{name}</b> · her Pay Alone on iPad
           </div>
           <div className="stg-area" ref={area}>
             <div
@@ -739,10 +723,18 @@ function Stage() {
             </div>
           </div>
         </div>
+        <div className="stg-divider" aria-hidden="true">
+          <span>
+            <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M4 8h14l-3-3M20 16H6l3 3" /></svg>
+          </span>
+        </div>
         <aside className="stg-right">
-          <div className="stg-label">
-            <b>{req?.merchantName ?? "Mama Chris"}</b> ·{" "}
-            {req?.outgoing ? "receiving" : "the seller"}
+          <div className="stg-tag">
+            <span className="stg-avatar">{(req?.merchantName ?? "Mama Chris").slice(0, 1).toUpperCase()}</span>
+            <span className="stg-tag-text">
+              <b>{req?.merchantName ?? "Mama Chris"}</b>
+              <small>{req?.outgoing ? "Receiving the money" : "The seller · her shop"}</small>
+            </span>
           </div>
           <div className={`stg-card ${st?.tone ?? "wait"}`}>
             {req ? (
@@ -787,6 +779,26 @@ function Stage() {
                 : mode === "connecting"
                   ? "Connecting the voice…"
                   : "Voice ready"}
+          </div>
+          <div className="stg-brandrow">
+            <span className="stg-brand">
+          <span className="stg-logo" aria-hidden="true">
+            <svg
+              viewBox="0 0 24 24"
+              width="20"
+              height="20"
+              fill="none"
+              stroke="#c3e88f"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M12 3l7 3v5c0 4.5-3 8.2-7 10-4-1.8-7-5.5-7-10V6l7-3z" />
+              <path d="M9 12l2 2 4-4" />
+            </svg>
+          </span>
+          Pay Alone
+        </span>
           </div>
           <p className="stg-foot">
             Interledger Open Payments · test network · money moves in US
@@ -859,26 +871,38 @@ body { margin: 0; background: #eaf2e5; }
 .stg-center { display: grid; place-content: center; justify-items: center; gap: 1rem; padding: 2rem; }
 .stg-start { width: 100%; border: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1rem; font-size: 1.4rem; cursor: pointer; }
 .stg-start-title { font-size: 3rem; font-weight: 700; color: #0f3b30; letter-spacing: -0.02em; }
-.stg { display: flex; flex-direction: column; padding: 1.1rem 1.6rem 1.2rem; box-sizing: border-box; overflow: hidden; }
-.stg-top { display: flex; justify-content: space-between; align-items: center; }
-.stg-brand { display: inline-flex; align-items: center; gap: .6rem; font-weight: 700; font-size: 1.5rem; color: #0f3b30; }
-.stg-logo { display: grid; place-items: center; width: 2.3rem; height: 2.3rem; border-radius: .7rem; background: #0f3b30; }
-.stg-live { font-weight: 600; font-size: 1rem; padding: .45rem 1rem; border-radius: 999px; background: #fff; color: #4b5f57; }
-.stg-live.on { background: #0f3b30; color: #fff; }
-.stg-live.on::first-letter { color: #ff5a5a; }
+.stg { display: flex; flex-direction: column; padding: 0; box-sizing: border-box; overflow: hidden; }
+.stg-brand { display: inline-flex; align-items: center; gap: .6rem; font-weight: 700; font-size: 1.3rem; color: #5a3d10; }
+.stg-logo { display: grid; place-items: center; width: 2.1rem; height: 2.1rem; border-radius: .7rem; background: #0f3b30; }
+.stg-live { margin-left: auto; font-weight: 600; font-size: 1rem; padding: .45rem 1rem; border-radius: 999px; background: rgba(255,255,255,.12); color: #cfe3da; white-space: nowrap; }
+.stg-live.on { background: #fff; color: #0f3b30; }
+.stg-live.on::first-letter { color: #e5322d; }
 .stg-live.test { background: #fde7c8; color: #7a4a00; }
-.stg-grid { flex: 1; display: grid; grid-template-columns: 2fr 1fr; gap: 1.6rem; margin-top: .9rem; min-height: 0; }
-.stg-left, .stg-right { display: flex; flex-direction: column; gap: .6rem; min-height: 0; }
-.stg-label { font-size: 1.05rem; color: #4b5f57; }
-.stg-label b { color: #0f3b30; font-size: 1.25rem; }
+/* Two worlds, side by side: Gloria's in deep green, Mama Chris's in warm sand, with a hard line between. */
+.stg-grid { flex: 1; display: grid; grid-template-columns: 2fr 10px 1fr; min-height: 0; }
+.stg-left, .stg-right { position: relative; display: flex; flex-direction: column; gap: .8rem; min-height: 0; padding: 1.3rem 1.6rem 1.4rem; }
+.stg-left { background: #0f3b30 radial-gradient(rgba(195,232,143,.09) 1.4px, transparent 1.6px) 0 0 / 22px 22px; color: #fff; }
+.stg-right { background: #f6e5c8 radial-gradient(rgba(150,95,20,.10) 1.4px, transparent 1.6px) 0 0 / 22px 22px; color: #3d2a0c; }
+.stg-divider { position: relative; background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.06); }
+.stg-divider span { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); display: grid; place-items: center; width: 4rem; height: 4rem; border-radius: 50%; background: #fff; color: #0f3b30; box-shadow: 0 8px 24px rgba(0,0,0,.18); z-index: 3; }
+.stg-tag { display: flex; align-items: center; gap: .9rem; }
+.stg-avatar { display: grid; place-items: center; width: 3.3rem; height: 3.3rem; border-radius: 50%; font-weight: 700; font-size: 1.5rem; flex: none; }
+.stg-left .stg-avatar { background: #c3e88f; color: #0f3b30; }
+.stg-right .stg-avatar { background: #e09a2d; color: #fff; }
+.stg-tag-text { display: grid; line-height: 1.15; }
+.stg-tag-text b { font-size: 2rem; font-weight: 700; letter-spacing: -.01em; }
+.stg-tag-text small { font-size: 1.05rem; opacity: .75; }
+.stg-left .stg-tag-text b { color: #fff; }
+.stg-right .stg-tag-text b { color: #5a3d10; }
+.stg-brandrow { margin-top: auto; }
 .stg-area { flex: 1; min-height: 0; display: grid; place-items: center; }
-.stg-ipad { box-sizing: border-box; padding: 14px; border-radius: 34px; background: #16201d; box-shadow: 0 30px 70px rgba(15, 59, 48, .25), inset 0 0 0 2px #2c3a36; }
+.stg-ipad { box-sizing: border-box; padding: 14px; border-radius: 34px; background: #0a0f0d; box-shadow: 0 30px 70px rgba(0, 0, 0, .45), 0 0 0 2px rgba(195, 232, 143, .35), inset 0 0 0 2px #2c3a36; }
 .stg-glass { position: relative; overflow: hidden; border-radius: 20px; background: #f4f8f1; }
 .stg-glass iframe { position: absolute; left: 0; top: 0; border: 0; transform-origin: 0 0; background: #f4f8f1; }
-.stg-orb-over { position: absolute; pointer-events: none; }
+.stg-orb-over { position: absolute; z-index: 1; pointer-events: none; }
 .stg-wait { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; gap: .5rem; color: #4b5f57; padding: 2rem; }
 .stg-wait b { font-size: 1.6rem; color: #0f3b30; }
-.stg-card { border-radius: 1.6rem; background: #fff; padding: 1.6rem 1.6rem 1.8rem; display: grid; gap: .45rem; box-shadow: 0 14px 34px rgba(15, 59, 48, .08); }
+.stg-card { border-radius: 1.6rem; background: #fffaf1; border: 2px solid #ecd3a6; padding: 1.6rem 1.6rem 1.8rem; display: grid; gap: .45rem; box-shadow: 0 14px 34px rgba(15, 59, 48, .08); }
 .stg-card.good { background: #0f3b30; color: #fff; }
 .stg-card-what { font-size: 1.1rem; opacity: .7; }
 .stg-card-amt { font-size: clamp(2.6rem, 4.2vw, 4.4rem); font-weight: 500; letter-spacing: -.03em; line-height: 1; }
@@ -889,12 +913,12 @@ body { margin: 0; background: #eaf2e5; }
 .stg-pill.good { background: #c3e88f; color: #0f3b30; font-size: 1.5rem; }
 .stg-pill.bad { background: #fde3df; color: #a2271b; }
 .stg-card-sub { font-size: 1rem; opacity: .75; }
-.stg-mode { display: flex; align-items: center; gap: .6rem; padding: .9rem 1.2rem; border-radius: 1.2rem; background: #fff; font-weight: 600; color: #0f3b30; }
+.stg-mode { display: flex; align-items: center; gap: .6rem; padding: .9rem 1.2rem; border-radius: 1.2rem; background: #fffaf1; font-weight: 600; color: #5a3d10; }
 .stg-dot { width: .8rem; height: .8rem; border-radius: 50%; background: #b9c7bf; }
 .stg-dot.speaking { background: #2a8fe0; animation: stg-pulse 1s ease-in-out infinite; }
 .stg-dot.listening { background: #11a88f; animation: stg-pulse 1s ease-in-out infinite; }
 @keyframes stg-pulse { 50% { transform: scale(1.5); opacity: .6; } }
-.stg-foot { margin: auto 0 0; font-size: .85rem; color: #6b7d75; }
+.stg-foot { margin: 0; font-size: .85rem; color: #7a6036; }
 
 .fp-dim { position: absolute; inset: 0; z-index: 5; display: grid; place-items: center; background: rgba(0, 0, 0, .28); animation: fp-fade .2s ease-out; }
 .fp-sheet { width: clamp(15rem, 34%, 20rem); padding: 1.6rem 1.4rem 1.2rem; border-radius: 1.2rem; background: rgba(250, 250, 250, .96); box-shadow: 0 20px 50px rgba(0, 0, 0, .3); display: grid; justify-items: center; gap: .45rem; text-align: center; color: #111; animation: fp-pop .28s cubic-bezier(.2, 1.4, .4, 1); font-family: -apple-system, system-ui, sans-serif; }
@@ -920,5 +944,5 @@ body { margin: 0; background: #eaf2e5; }
 @keyframes fp-draw { to { stroke-dashoffset: 0; } }
 @keyframes fp-glow { 0% { box-shadow: 0 0 0 0 rgba(52, 199, 89, .6), 0 20px 50px rgba(0,0,0,.3); } 100% { box-shadow: 0 0 0 28px rgba(52, 199, 89, 0), 0 20px 50px rgba(0,0,0,.3); } }
 @keyframes fp-shake { 10%, 90% { transform: translateX(-2px); } 20%, 80% { transform: translateX(4px); } 30%, 50%, 70% { transform: translateX(-9px); } 40%, 60% { transform: translateX(9px); } }
-@media (max-width: 900px) { .stg { overflow: auto; } .stg-grid { grid-template-columns: 1fr; } }
+@media (max-width: 900px) { .stg { overflow: auto; } .stg-grid { grid-template-columns: 1fr; } .stg-divider { height: 10px; } }
 `;
