@@ -444,6 +444,7 @@ export default function WalletPage() {
 
   // One fingerprint approval at a time, started by the agent's tool or by the safety net.
   const approving = useRef(false);
+  const saidPaid = useRef(true);
   const runApprove = useCallback(async (): Promise<string> => {
     if (approving.current) return "not paid: the fingerprint prompt is already open. Wait for the customer's finger.";
     approving.current = true;
@@ -453,9 +454,17 @@ export default function WalletPage() {
       // being asked for, the voice service can drop the tool result with that turn.
       liveSession.current?.context(
         r.startsWith("paid")
-          ? `RESULT: the payment is finished and PAID. ${r} Do not ask for a tap or the fingerprint again. Tell the customer plainly that it is paid.`
+          ? `RESULT: the payment is finished and PAID. ${r} Do not ask for a tap or the fingerprint again.`
           : `RESULT of the fingerprint step: ${r}`,
       );
+      if (r.startsWith("paid")) {
+        // Hard rule: a successful payment is always announced first. If the voice has not said so soon, ask it now.
+        saidPaid.current = false;
+        const sentence = /"([^"]+)"/.exec(r)?.[1] ?? "Congratulations! Your payment was successful.";
+        setTimeout(() => {
+          if (!saidPaid.current && liveSession.current) liveSession.current.nudge(`(The app: the payment succeeded. Say exactly this now, then wait: ${sentence})`);
+        }, 4000);
+      }
       // The Touch ID sheet can leave the microphone paused on iPad: reopen it.
       setTimeout(() => void liveSession.current?.refreshAudio("after fingerprint"), 400);
       return r;
@@ -479,6 +488,7 @@ export default function WalletPage() {
           onMode: setLiveMode,
           onLine: (who, text) => {
             heardLines++;
+            if (who === "app" && /success|congratulation|is paid|has been paid|don pay|ti san/i.test(text)) saidPaid.current = true;
             setLiveLines((l) => [...l, { who, text }]);
             // Safety net: the agent told the customer to use their finger but did not open the prompt.
             if (who === "app" && /rest your finger|home button/i.test(text)) {
@@ -1228,7 +1238,7 @@ function Approve({
     const paid = r.status === "paid" && r.paid;
     const left = paid ? await live.leftNow() : "";
     toolText.current = paid
-      ? `paid: ${speakAmount(r.paid!.debitAmount)} left the customer's account to ${r.merchantName}.${left}`
+      ? `paid: SAY THIS FIRST, before anything else: "Congratulations! Your payment of ${speakAmount(r.paid!.debitAmount)} to ${r.merchantName} was successful." Then stop and wait; do not offer savings or anything else unless they ask. (Facts: ${speakAmount(r.paid!.debitAmount)} left the customer's account to ${r.merchantName}.${left})`
       : r.status === "declined"
         ? "refused. No money moved."
         : `not paid: ${r.failure?.message ?? "the wallet did not pay"}. No money moved.`;
