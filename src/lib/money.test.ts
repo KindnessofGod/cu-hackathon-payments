@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addAmounts, exceedsCap, formatAmount, isAmount, parseMajor, remainingOfCap, speakAmount, toMajorString } from "./money";
+import { addAmounts, exceedsCap, formatAmount, isAmount, parseMajor, remainingOfCap, speakAmount, toMajorString, amountFromSpeech } from "./money";
 
 const ngn = (value: string) => ({ value, assetCode: "NGN", assetScale: 2 });
 
@@ -30,9 +30,9 @@ describe("formatting", () => {
     expect(speakAmount(ngn("200000"))).toBe("2,000 naira");
     expect(speakAmount(ngn("205050"))).toBe("2,050 naira and 50 kobo");
     expect(speakAmount({ value: "1250", assetCode: "XYZ", assetScale: 2 })).toBe("12.50 XYZ");
-    expect(speakAmount({ value: "100", assetCode: "USD", assetScale: 2 })).toBe("1 dollar");
-    expect(speakAmount({ value: "101", assetCode: "USD", assetScale: 2 })).toBe("1 dollar and 1 cent");
-    expect(speakAmount({ value: "50", assetCode: "USD", assetScale: 2 })).toBe("50 cents");
+    expect(speakAmount({ value: "100", assetCode: "USD", assetScale: 2 })).toBe("about 1,354 naira");
+    expect(speakAmount({ value: "101", assetCode: "USD", assetScale: 2 })).toBe("about 1,368 naira");
+    expect(speakAmount({ value: "50", assetCode: "USD", assetScale: 2 })).toBe("about 677 naira");
   });
 });
 
@@ -55,5 +55,44 @@ describe("isAmount", () => {
     expect(isAmount({ value: "1.5", assetCode: "NGN", assetScale: 2 })).toBe(false);
     expect(isAmount({ value: 10, assetCode: "NGN", assetScale: 2 })).toBe(false);
     expect(isAmount(null)).toBe(false);
+  });
+});
+
+describe("amountFromSpeech (naira by default)", () => {
+  const f = (t: string) => amountFromSpeech(t, "USD", 2);
+  it("treats a bare number as naira and converts at the CBN rate", () => {
+    expect(f("5000")).toEqual({ minor: "369", saidNaira: "5,000" });
+    expect(f("5,000 naira")).toEqual({ minor: "369", saidNaira: "5,000" });
+    expect(f("5k")).toEqual({ minor: "369", saidNaira: "5,000" });
+    expect(f("2 thousand")).toEqual({ minor: "148", saidNaira: "2,000" });
+  });
+  it("keeps dollars when they say dollars", () => {
+    expect(f("2 dollars")).toEqual({ minor: "200", saidNaira: null });
+    expect(f("$2.50")).toEqual({ minor: "250", saidNaira: null });
+    expect(f("50 cents")).toEqual({ minor: "50", saidNaira: null });
+  });
+  it("refuses nothing or zero", () => {
+    expect(f("")).toBeNull();
+    expect(f("0")).toBeNull();
+    expect(f("1 naira")).toBeNull(); // less than one cent
+  });
+});
+
+import { numberWordsToDigits } from "./money";
+describe("amounts said in words", () => {
+  it("reads number words", () => {
+    expect(numberWordsToDigits("two thousand naira")).toBe("2000 naira");
+    expect(numberWordsToDigits("ten thousand naira")).toBe("10000 naira");
+    expect(numberWordsToDigits("two thousand five hundred naira")).toBe("2500 naira");
+    expect(numberWordsToDigits("a thousand naira")).toBe("1000 naira");
+    expect(numberWordsToDigits("one hundred and fifty thousand naira")).toBe("150000 naira");
+    expect(numberWordsToDigits("twenty-five dollars")).toBe("25 dollars");
+    expect(numberWordsToDigits("2 thousand naira")).toBe("2 thousand naira");
+  });
+  it("turns spoken naira into the dollar amount", () => {
+    expect(amountFromSpeech("two thousand naira", "USD", 2)?.saidNaira).toBe("2,000");
+    expect(amountFromSpeech("ten thousand naira", "USD", 2)?.minor).toBe("739");
+    expect(amountFromSpeech("2 thousand naira", "USD", 2)?.saidNaira).toBe("2,000");
+    expect(amountFromSpeech("two k", "USD", 2)?.saidNaira).toBe("2,000");
   });
 });

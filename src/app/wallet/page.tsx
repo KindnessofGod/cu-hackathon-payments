@@ -3,13 +3,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppBar, Icon } from "@/components/ui";
 import { api, errorText, type ApiError } from "@/lib/client";
-import { formatAmount, speakAmount, type Amount } from "@/lib/money";
+import { formatAmount, nairaOf, speakAmount, type Amount } from "@/lib/money";
 import { BrowserSpeechOutput, HostedSpeechOutput } from "@/lib/speech";
-import { startAuthentication, startRegistration } from "@simplewebauthn/browser";
+import { startAuthentication, startRegistration, WebAuthnAbortService } from "@simplewebauthn/browser";
 import { inNativeApp, nativeCreateKey, nativeSign } from "@/lib/native";
 import { canListen, recordAnswer } from "@/lib/listen";
 import type { Intent } from "@/lib/voice/intent";
-import { nudgeAudio, report, startLive, type LiveMode, type LiveSession } from "@/lib/liveVoice";
+import { LIVE_KEY, stageBrief, stageOpen, stageSend, stageStatus } from "@/lib/stage";
+import { startMirror } from "@/lib/mirror";
+import { nudgeAudio, report, stageMode, startLive, successChime, type LiveMode, type LiveSession } from "@/lib/liveVoice";
 import { GlassOrb } from "@/components/GlassOrb";
 import { canWake, startWake } from "@/lib/wake";
 import { createAvatar } from "@dicebear/core";
@@ -35,6 +37,32 @@ const symbolOf = (code: string) => SYMBOL[code] ?? code;
 const titleCase = (n: string) => n.replace(/\b\p{L}/gu, (c) => c.toUpperCase());
 
 /** An amount with a small raised currency sign. Screen readers hear it spoken in full. */
+type SpokenLang = "pidgin" | "yoruba" | "hausa" | "english";
+/** A rough guess at the language of one spoken line, from words that only that language uses. */
+function spokenLanguage(text: string): SpokenLang | null {
+  const t = ` ${text.toLowerCase().replace(/[^a-zÀ-ɏḀ-ỿ' ]+/g, " ")} `;
+  if (/ (mo fe|mo fẹ|owo |fi ranse|e jo|ejo |e se |bawo|e kaaro|elo |melo|egberun|ẹgbẹ|jowo|ṣe) /.test(t)) return "yoruba";
+  if (/ (ina son|kudi|aika|biya|sannu|nawa|dubu|don allah|na gode) /.test(t)) return "hausa";
+  if (/ (abeg|wetin|dey|una|wahala|make we|make i|make you|i wan|wan send|wan pay|want send|go give|no be|don pay|e don|sabi|oya|how far|na im|na so|comot|wey|abi|sha|shey|abeg o) /.test(t)) return "pidgin";
+  // Several plain English words and no marker: English.
+  if (t.trim().split(/\s+/).length >= 4 && / (the|please|would|could|my|want to|how much|thank you|can you) /.test(t)) return "english";
+  return null;
+}
+const LANGUAGE_NUDGE: Record<SpokenLang, string> = {
+  pidgin: "LANGUAGE: the customer is speaking Nigerian Pidgin. From your next reply, answer ONLY in Nigerian Pidgin (for example: \"Okay o. How much you wan send?\", \"E don pay!\"), until they speak plain English again.",
+  yoruba: "LANGUAGE: the customer is speaking Yoruba. Call language_detection now with language \"yo\" (the code, not the word), then answer ONLY in Yoruba. If the switch fails, answer in Nigerian Pidgin, never in English.",
+  hausa: "LANGUAGE: the customer is speaking Hausa. Call language_detection now with language \"ha\" (the code, not the word), then answer ONLY in Hausa. If the switch fails, answer in Nigerian Pidgin, never in English.",
+  english: "LANGUAGE: the customer is speaking plain English now. Answer in English (if you had switched language, call language_detection with language \"en\").",
+};
+
+/** How long the fingerprint prompt stays open before the app closes it as not recognised. */
+const FINGER_WAIT_MS = 20000;
+/** A fingerprint that does not go through is asked for again by itself this many times before the voice is told. */
+const FINGER_TRIES = 3;
+
+/** Column heights for the balance card's dot pattern (design A), rising to the right edge. */
+const BAL_DOTS = [1, 2, 2, 3, 2, 4, 3, 3, 5, 4, 3, 5, 6, 4, 5, 6, 7, 6, 5, 6, 7, 6, 7, 7, 6, 7, 7, 7, 7, 7, 7, 7, 7];
+
 function Money({ a, size = "md" }: { a: Amount; size?: "sm" | "md" | "lg" | "xl" }) {
   const num = formatAmount(a).slice(a.assetCode.length + 1);
   return (
@@ -44,6 +72,11 @@ function Money({ a, size = "md" }: { a: Amount; size?: "sm" | "md" | "lg" | "xl"
         <sup>{symbolOf(a.assetCode)}</sup>
         {num}
       </span>
+      {nairaOf(a) && (
+        <span aria-hidden="true" style={{ display: "block", fontSize: "0.42em", opacity: 0.75, fontWeight: 500, letterSpacing: 0 }}>
+          ≈ ₦{nairaOf(a)}
+        </span>
+      )}
     </span>
   );
 }
@@ -138,6 +171,8 @@ interface CustomerView {
   assetScale: number;
   cap: CapView | null;
   fingerprint: { kind: "passkey" | "device"; id: string; transports?: string[]; createdAt: string }[];
+  /** Worked out by Pay Alone: a figure read from the wallet, minus payments made through Pay Alone since. */
+  balance?: { amount: Amount; asOf: string; source: string; paidSince: Amount; count: number } | null;
 }
 
 interface RequestView {
@@ -196,6 +231,8 @@ interface Live {
   standby: boolean;
   /** After a payment: what is left of the limit, from fresh records, as a sentence for the agent. */
   leftNow: () => Promise<string>;
+  /** Opens the fingerprint again for the waiting payment (a tap after a failed try); the voice hears the result. */
+  approveAgain: () => Promise<string>;
 }
 
 const voice = new BrowserSpeechOutput();
@@ -223,10 +260,10 @@ function readPrefs(): VoicePrefs {
       natural: window.localStorage.getItem("naturalVoice") !== "off",
       listen: window.localStorage.getItem("voiceAnswer") !== "off",
       auto: window.localStorage.getItem("autoTalk") !== "off",
-      lang: l && l in LANG_NAMES ? l : "en",
+      lang: l && l in LANG_NAMES ? l : "pcm",
     };
   } catch {
-    return { on: true, natural: true, listen: true, auto: true, lang: "en" };
+    return { on: true, natural: true, listen: true, auto: true, lang: "pcm" };
   }
 }
 
@@ -259,11 +296,28 @@ function resultSentence(r: RequestView, cap: CapView | null): string {
   return "";
 }
 
+/** Whether this device's browser opens the fingerprint prompt without a tap ("ok"), needs one ("tap"), or is unknown (""). */
+function fingerNoTap(): "" | "ok" | "tap" {
+  try {
+    const v = localStorage.getItem("payalone-finger-notap");
+    return v === "ok" || v === "tap" ? v : "";
+  } catch {
+    return "";
+  }
+}
+function rememberFingerNoTap(v: "ok" | "tap") {
+  try {
+    localStorage.setItem("payalone-finger-notap", v);
+  } catch {
+    // private mode: try again next time
+  }
+}
+
 export default function WalletPage() {
   const [state, setState] = useState<State | null>(null);
   const [loadError, setLoadError] = useState<ApiError | null>(null);
   const [notice, setNotice] = useState<{ text: string; good: boolean; walletSaid?: string } | null>(null);
-  const [prefs, setPrefs] = useState<VoicePrefs>({ on: true, natural: true, listen: true, auto: true, lang: "en" });
+  const [prefs, setPrefs] = useState<VoicePrefs>({ on: true, natural: true, listen: true, auto: true, lang: "pcm" });
   const appVoice = prefs.on;
   const spokenFor = useRef<string>("");
   // The one live voice conversation.
@@ -361,6 +415,91 @@ export default function WalletPage() {
     return "not paid: no payment is waiting right now. Nothing was paid.";
   };
 
+  // Starts a payment the customer asked for by voice and waits for the wallet's quote. Never pays.
+  const prepared = useCallback(
+    async (start: () => Promise<{ id: string; to: string; naira?: string }>): Promise<string> => {
+      try {
+        // A brief drop in the iPad's connection should not lose the request: try up to three times.
+        // Safe to repeat: if an earlier try did reach the server, the repeat is refused as "already waiting".
+        let res: { id: string; to: string; naira?: string } | null = null;
+        for (let attempt = 0; !res; attempt++) {
+          try {
+            res = await start();
+          } catch (e) {
+            // An earlier try did get through: the waiting payment is the one just asked for.
+            if (attempt > 0 && /already waiting/.test(errorText(e).message)) {
+              const p = (await refresh())?.pending;
+              if (p?.outgoing) {
+                res = { id: p.id, to: p.merchantName };
+                break;
+              }
+            }
+            if (errorText(e).kind !== "offline" || attempt >= 2) throw e;
+            await new Promise((w) => setTimeout(w, 1200 * (attempt + 1)));
+          }
+        }
+        const said = res.naira ? `The customer asked for ${res.naira} naira; the test wallet runs in dollars, so it is sent as its dollar value at the CBN rate. Say it once, as ${res.naira} naira only; give the dollar amount only if they ask. ` : "";
+        sentByVoice.current = res.id;
+        liveFor.current = res.id;
+        for (let i = 0; i < 25; i++) {
+          const st = await refresh();
+          const r = st?.pending;
+          if (r && r.id === res.id && r.debitAmount && r.receiveAmount) {
+            const consent = r.needsWalletConsent ? " There is no spending limit, so after the fingerprint the wallet will open its own page to confirm." : "";
+            const recv = res.naira ? `${res.naira} naira` : speakAmount(r.receiveAmount);
+            const same = speakAmount(r.receiveAmount) === speakAmount(r.debitAmount);
+            return same
+              ? `${said}ready, not paid yet: ${r.merchantName} will receive ${recv}, no fee. Say it in ONE short sentence ("${r.merchantName} will get ${recv}. Shall I pay?"), not twice.${consent}`
+              : `${said}ready, not paid yet: ${r.merchantName} will receive ${recv}; ${speakAmount(r.debitAmount)} will leave the customer's account, fees included.${consent} Ask the customer if they want to pay.`;
+          }
+          if (!r || r.id !== res.id) {
+            if (st?.last?.id === res.id) return `could not prepare: ${st.last.failure?.message ?? "the wallet did not accept it"}. Nothing was paid.`;
+          }
+          await new Promise((w) => setTimeout(w, 1000));
+        }
+        return "not ready: the wallet did not give the exact amount in time. Nothing was paid.";
+      } catch (e) {
+        const msg = errorText(e).message;
+        if (/already waiting/.test(msg))
+          return `not started: ${msg} Nothing was cancelled and nothing was paid. Tell the customer exactly which payment is waiting (who and how much) and ask: pay it, or cancel it? To pay it, follow step 3 and call approve_payment. To cancel it, call refuse_payment; then, if they still want the new one, call this tool again.`;
+        return `could not prepare: ${msg} Nothing was paid.`;
+      }
+    },
+    [refresh],
+  );
+
+  // One fingerprint approval at a time, started by the agent's tool or by the safety net.
+  const approving = useRef(false);
+  const saidPaid = useRef(true);
+  const spokeIn = useRef<SpokenLang | "">("");
+  const runApprove = useCallback(async (): Promise<string> => {
+    if (approving.current) return "not paid: the fingerprint prompt is already open. Wait for the customer's finger.";
+    approving.current = true;
+    try {
+      const r = await (liveHandlers.current.approve?.() ?? Promise.resolve(nothingWaiting()));
+      // The result is also sent as a context update: if the customer spoke while the fingerprint was
+      // being asked for, the voice service can drop the tool result with that turn.
+      liveSession.current?.context(
+        r.startsWith("paid")
+          ? `RESULT: the payment is finished and PAID. ${r} Do not ask for a tap or the fingerprint again.`
+          : `RESULT of the fingerprint step: ${r}`,
+      );
+      if (r.startsWith("paid")) {
+        // Hard rule: a successful payment is always announced first. If the voice has not said so soon, ask it now.
+        saidPaid.current = false;
+        const sentence = /"([^"]+)"/.exec(r)?.[1] ?? "Congratulations! Your payment was successful.";
+        setTimeout(() => {
+          if (!saidPaid.current && liveSession.current) liveSession.current.nudge(`(The app: the payment succeeded. Say this now in the language you are speaking with them, then wait: ${sentence})`);
+        }, 4000);
+      }
+      // The Touch ID sheet can leave the microphone paused on iPad: reopen it.
+      setTimeout(() => void liveSession.current?.refreshAudio("after fingerprint"), 400);
+      return r;
+    } finally {
+      approving.current = false;
+    }
+  }, []);
+
   const startLiveVoice = useCallback(
     async (requestId?: string): Promise<boolean> => {
       if (liveActive.current) return true;
@@ -371,12 +510,30 @@ export default function WalletPage() {
       let heardLines = 0;
       try {
         liveSession.current = await startLive({
-          startUrl: `/api/voice/agent?native=${inNativeApp() ? "1" : "0"}${requestId ? `&id=${encodeURIComponent(requestId)}` : ""}`,
+          startUrl: `/api/voice/agent?native=${inNativeApp() ? "1" : "0"}&tap=${fingerNoTap() === "tap" ? "1" : "0"}${requestId ? `&id=${encodeURIComponent(requestId)}` : ""}`,
           lang: prefs.lang,
           onMode: setLiveMode,
           onLine: (who, text) => {
             heardLines++;
+            // The agent often answers Pidgin or Yoruba in English; the app spots it and tells the agent directly.
+            if (who === "you") {
+              const lang = spokenLanguage(text);
+              if (lang && lang !== spokeIn.current) {
+                spokeIn.current = lang;
+                liveSession.current?.context(LANGUAGE_NUDGE[lang]);
+              }
+            }
+            if (who === "app" && /success|congratulation|is paid|has been paid|don pay|don reach|ti san/i.test(text)) saidPaid.current = true;
             setLiveLines((l) => [...l, { who, text }]);
+            // Safety net: the agent told the customer to use their finger but did not open the prompt.
+            if (who === "app" && /rest your finger|home button/i.test(text)) {
+              setTimeout(() => {
+                if (!approving.current && liveHandlers.current.approve) {
+                  report("agent asked for the finger without approve_payment; opening it");
+                  void runApprove();
+                }
+              }, 1500);
+            }
           },
           onEnd: () => {
             liveActive.current = false;
@@ -395,28 +552,48 @@ export default function WalletPage() {
               const code = (await refresh())?.customer?.payCode ?? "";
               return code ? `shown: the QR code and the pay code ${code.split("").join(" ")} are now large on the screen.` : "could not show the pay code.";
             },
-            approve_payment: () => liveHandlers.current.approve?.() ?? Promise.resolve(nothingWaiting()),
-            refuse_payment: () => liveHandlers.current.refuse?.() ?? Promise.resolve("nothing to refuse: no payment is waiting right now."),
-            send_money: async (p) => {
+            // The result is also sent as a context update: if the customer spoke while the fingerprint was
+            // being asked for, the voice service can drop the tool result with that turn, and the agent
+            // would keep asking for a finger that was already given.
+            approve_payment: () => runApprove(),
+            // A new spending limit: only the wallet can grant it, on its own page, where the customer accepts.
+            change_limit: async (p) => {
               try {
-                const res = await api<{ id: string; to: string }>("/api/wallet/send", { method: "POST", body: { to: String(p.to ?? ""), amount: String(p.amount ?? "") } });
-                sentByVoice.current = res.id;
-                liveFor.current = res.id;
-                for (let i = 0; i < 25; i++) {
-                  const st = await refresh();
-                  const r = st?.pending;
-                  if (r && r.id === res.id && r.debitAmount && r.receiveAmount) {
-                    const consent = r.needsWalletConsent ? " There is no spending limit, so after the fingerprint the wallet will open its own page to confirm." : "";
-                    return `ready, not paid yet: ${r.merchantName} will receive ${speakAmount(r.receiveAmount)}. ${speakAmount(r.debitAmount)} will leave the customer's account, fees included.${consent} Ask the customer if they want to pay.`;
-                  }
-                  if (!r || r.id !== res.id) {
-                    if (st?.last?.id === res.id) return `could not prepare: ${st.last.failure?.message ?? "the wallet did not accept it"}. Nothing was paid.`;
-                  }
-                  await new Promise((w) => setTimeout(w, 1000));
-                }
-                return "not ready: the wallet did not give the exact amount in time. Nothing was paid.";
+                const every = String(p.every ?? "week").toLowerCase().startsWith("d") ? "day" : "week";
+                const r = await api<{ redirectUrl: string; limit: Amount }>("/api/wallet/cap", { method: "POST", body: { amount: String(p.amount ?? ""), every } });
+                setTimeout(() => {
+                  liveSession.current?.end();
+                  window.location.assign(r.redirectUrl);
+                }, 9000);
+                return `opening: in about 9 seconds the wallet's own page opens to confirm a new limit of ${speakAmount(r.limit)} a ${every}. Tell the customer now, in two short sentences: their wallet's page is opening, and they must accept the new limit there themselves; then they come back to Pay Alone. Until they accept, the old limit stays. This call will end when the page opens.`;
               } catch (e) {
-                return `could not prepare: ${errorText(e).message} Nothing was paid.`;
+                return `could not start: ${errorText(e).message} The limit did not change.`;
+              }
+            },
+            refuse_payment: () => liveHandlers.current.refuse?.() ?? Promise.resolve("nothing to refuse: no payment is waiting right now."),
+            send_money: async (p) => prepared(() => api<{ id: string; to: string }>("/api/wallet/send", { method: "POST", body: { to: String(p.to ?? ""), amount: String(p.amount ?? "") } })),
+            save_money: async (p) =>
+              prepared(() => api<{ id: string; to: string }>("/api/wallet/grow", { method: "POST", body: { action: "save", amount: String(p.amount ?? "") } })),
+            invest_practice: async (p) =>
+              prepared(() =>
+                api<{ id: string; to: string }>("/api/wallet/grow", { method: "POST", body: { action: "invest", share: String(p.share ?? ""), amount: String(p.amount ?? "") } }),
+              ),
+            market_overview: async () => {
+              try {
+                const g = await api<GrowView>("/api/wallet/grow");
+                window.dispatchEvent(new Event("payalone:show-grow"));
+                return `live prices (facts, not advice): ${marketLine(g.market)}. ${growLine(g)}`;
+              } catch (e) {
+                return `prices not available: ${errorText(e).message}`;
+              }
+            },
+            my_savings_and_investments: async () => {
+              try {
+                const g = await api<GrowView>("/api/wallet/grow");
+                window.dispatchEvent(new Event("payalone:show-grow"));
+                return growLine(g);
+              } catch (e) {
+                return `not available: ${errorText(e).message}`;
               }
             },
           },
@@ -430,7 +607,7 @@ export default function WalletPage() {
         return false;
       }
     },
-    [prefs.lang, refresh, setLiveMode],
+    [prefs.lang, refresh, setLiveMode, prepared, runApprove],
   );
 
   const live: Live = {
@@ -443,6 +620,7 @@ export default function WalletPage() {
     start: startLiveVoice,
     end: () => void liveSession.current?.end(),
     standby,
+    approveAgain: () => runApprove(),
     leftNow: async () => {
       const st = await refresh();
       const c = st?.customer?.cap;
@@ -473,10 +651,29 @@ export default function WalletPage() {
     document.addEventListener("visibilitychange", onVis);
     return () => document.removeEventListener("visibilitychange", onVis);
   }, [refresh]);
+  // A microphone that went dead (exactly zero for several seconds while listening) is reopened.
+  useEffect(() => {
+    if (liveMode !== "listening") return;
+    let zeroFor = 0;
+    let lastFix = 0;
+    const t = setInterval(() => {
+      const v = liveSession.current?.levels().input ?? 1;
+      zeroFor = v === 0 ? zeroFor + 500 : 0;
+      if (zeroFor >= 6000 && Date.now() - lastFix > 15000) {
+        lastFix = Date.now();
+        zeroFor = 0;
+        void liveSession.current?.refreshAudio("silent microphone");
+      }
+    }, 500);
+    return () => clearInterval(t);
+  }, [liveMode]);
+
   // Safari may hold back the voice of a call the app started by itself: any tap lets it play.
   useEffect(() => {
     const onTap = () => {
-      if (liveActive.current) nudgeAudio();
+      if (!liveActive.current) return;
+      nudgeAudio();
+      if (!approving.current) void liveSession.current?.refreshAudio("tap"); // never while the fingerprint prompt opens
     };
     document.addEventListener("pointerdown", onTap);
     return () => document.removeEventListener("pointerdown", onTap);
@@ -525,9 +722,12 @@ export default function WalletPage() {
       if (pending.id === sentByVoice.current) return; // the customer asked for it by voice; the agent is already talking about it
       if (liveActive.current && liveFor.current === pending.id) return; // the agent is already talking about it
       if (liveActive.current && liveFor.current !== pending.id) {
-        // A seller asked during a conversation: start again about this request, so the agent has its facts.
-        liveSession.current?.end();
-        setTimeout(() => void startLiveVoice(pending.id), 800);
+        // A seller asked during a conversation: the call goes on (hanging up would cut off what the agent is
+        // saying, such as "Congratulations"); the agent is told the new request's facts instead.
+        liveFor.current = pending.id;
+        liveSession.current?.context(
+          `NEW REQUEST, waiting now: ${requestSentence(pending)} First finish what you were saying (if a payment was just paid, the congratulations comes first). Then tell the customer about this new request in their language and ask if they want to pay it. If they say yes, follow step 3 and call approve_payment. Never pay it without their clear yes.`,
+        );
         return;
       }
       if (prefs.on && prefs.natural && prefs.auto && !liveActive.current) {
@@ -554,6 +754,41 @@ export default function WalletPage() {
     },
     [refresh, say, sayOurs],
   );
+
+  // Stage mode: send what is happening to the studio page (/stage?k=…). The agent's voice goes from liveVoice.
+  const hasCustomer = Boolean(state?.customer);
+  const [stageKey, setStageKey] = useState("");
+  useEffect(() => {
+    if (!hasCustomer || !stageMode()) return;
+    stageOpen(LIVE_KEY, (why) => report("studio feed", why));
+    setStageKey(LIVE_KEY);
+    return startMirror((why) => report("studio feed", why));
+  }, [hasCustomer]);
+  useEffect(() => {
+    if (!stageKey || !state?.customer) return;
+    const c = state.customer;
+    const snap = () =>
+      stageSend("snap", {
+        name: c.name ?? "Customer",
+        left: c.cap?.left ?? null,
+        limit: c.cap?.limit ?? null,
+        every: c.cap?.every ?? null,
+        pending: stageBrief(state.pending ?? null),
+        last: stageBrief(state.last ?? null),
+        mode: liveModeRef.current,
+        lines: liveLines.slice(-6),
+      });
+    snap();
+    const t = setInterval(snap, 2000);
+    return () => clearInterval(t);
+  }, [stageKey, state, liveLines]);
+  useEffect(() => {
+    if (!stageKey) return;
+    stageSend("mode", { mode: liveMode });
+    if (liveMode !== "listening") return;
+    const t = setInterval(() => stageSend("level", { v: liveSession.current?.levels().input ?? 0 }), 150);
+    return () => clearInterval(t);
+  }, [stageKey, liveMode]);
 
   if (loadError && !state) {
     return (
@@ -945,13 +1180,16 @@ function Approve({
   const [hearing, setHearing] = useState<"" | "speaking" | "listening" | "thinking">("");
   const [talk, setTalk] = useState<{ who: "app" | "you"; text: string }[]>([]);
   const [message, setMessage] = useState("");
+  useEffect(() => stageSend("prompt", { id: request.id, text: message }), [message, request.id]);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const autoAsked = useRef(false);
   // While the live conversation runs, the agent does the talking.
   const liveOn = live.active;
   const toolWait = useRef<((s: string) => void) | null>(null);
   const toolText = useRef("");
+  const voiceDown = useRef(false); // the voice could not start here; taps go straight to paying
   const armedRef = useRef(false);
+  const retryByTap = useRef(false);
   armedRef.current = armed;
   const ready = Boolean(request.challenge && request.debitAmount);
   const sentence = useMemo(() => requestSentence(request), [request]);
@@ -981,7 +1219,14 @@ function Approve({
       approve: async () => {
         toolText.current = "";
         void sayHowTo();
-        const s = await activateRef.current(true);
+        let s = await activateRef.current(true);
+        // A fingerprint that did not go through opens again by itself, without waiting for the voice.
+        for (let tryNo = 2; tryNo <= FINGER_TRIES && s.startsWith("not paid: the fingerprint"); tryNo++) {
+          setMessage("Not recognised. Try again: rest your finger on the Home button.");
+          if (prefs.natural) await hosted.play({ what: "howto", how: "finger", id: request.id, lang: prefs.lang }, "Try again. Rest your finger on the Home button.");
+          else await voice.speak("Try again. Rest your finger on the Home button.");
+          s = await activateRef.current(true);
+        }
         if (s === "done") return toolText.current || "not paid: the wallet did not answer.";
         if (s === "waiting") {
           setMessage(needsFinger ? "Tap the screen once, then rest your finger on the Home button." : "Tap the screen once to pay.");
@@ -1017,7 +1262,7 @@ function Approve({
    * cannot see, whatever the agent said.
    */
   async function sayHowTo() {
-    const how = !needsFinger ? "tap" : inNativeApp() && fingerprint.some((f) => f.kind === "device") ? "finger" : "tapFinger";
+    const how = !needsFinger ? "tap" : (inNativeApp() && fingerprint.some((f) => f.kind === "device")) || fingerNoTap() !== "tap" ? "finger" : "tapFinger";
     const text =
       how === "finger" ? "Now rest your finger on the Home button to pay." : how === "tap" ? "Now tap the screen once to pay." : "Now tap the screen once, then rest your finger on the Home button.";
     for (let i = 0; i < 25 && live.session.current && live.modeNow() === "speaking"; i++) await new Promise((r) => setTimeout(r, 200));
@@ -1035,11 +1280,12 @@ function Approve({
 
   /** Finishes a payment or refusal. In a live conversation the agent tells the result. */
   async function done(r: RequestView) {
+    if (r.status === "paid") successChime(); // a happy sound the moment it is paid (also in the studio)
     if (!liveOn.current) return onDone(r);
     const paid = r.status === "paid" && r.paid;
     const left = paid ? await live.leftNow() : "";
     toolText.current = paid
-      ? `paid: ${speakAmount(r.paid!.debitAmount)} left the customer's account to ${r.merchantName}.${left}`
+      ? `paid: SAY THIS FIRST, before anything else, in the language you are speaking with them: "Congratulations! Your payment of ${speakAmount(r.paid!.debitAmount)} to ${r.merchantName} was successful." (in Pidgin: "E don pay! Congratulations, your ${speakAmount(r.paid!.debitAmount)} don reach ${r.merchantName}.") Then stop and wait; do not offer savings or anything else unless they ask. (Facts: ${speakAmount(r.paid!.debitAmount)} left the customer's account to ${r.merchantName}.${left})`
       : r.status === "declined"
         ? "refused. No money moved."
         : `not paid: ${r.failure?.message ?? "the wallet did not pay"}. No money moved.`;
@@ -1048,15 +1294,14 @@ function Approve({
   }
 
   /** The live conversation: natural voice, the customer can interrupt, the agent answers questions. */
-  async function talk_(): Promise<void> {
-    if (liveOn.current || busy || !ready) return;
+  async function talk_(): Promise<boolean> {
+    if (liveOn.current || busy || !ready) return true;
     setMessage("Connecting the voice…");
     if (await live.start(request.id)) {
       setMessage("Talk naturally. Ask who is asking, how much is left, or say pay or no.");
-      return;
+      return true;
     }
-    // The live voice could not start: use the simpler voice answers instead.
-    void askByVoice();
+    return false;
   }
 
   /** Speaks one of the server's sentences in the chosen language (device English voice as fallback). */
@@ -1145,11 +1390,23 @@ function Approve({
     }
     if (hearing) return "not paid: busy.";
     // A tap during a live conversation only matters once the agent has asked for the fingerprint.
+    // After a fingerprint that did not go through, a tap tries again, through the voice's own path.
+    if (!spoken && quiet && !armedRef.current && retryByTap.current) {
+      retryByTap.current = false;
+      void live.approveAgain();
+      return "";
+    }
     if (!spoken && quiet && !armedRef.current) return "";
     // First tap with voice answers on: start talking. A tap while armed goes straight on.
-    if (!spoken && !armed && voiceAnswers) {
-      if (prefs.natural) await talk_();
-      else await askByVoice();
+    // If the voice is not available on this device (no microphone, voice service down), taps pay instead.
+    if (!spoken && !armed && voiceAnswers && !voiceDown.current) {
+      if (prefs.natural ? await talk_() : await askByVoice().then(() => true, () => false)) return "";
+      voiceDown.current = true;
+      const text = needsFinger
+        ? "The voice is not available right now. Tap again, then rest your finger on the Home button to pay. To refuse, do nothing."
+        : "The voice is not available right now. Tap again to pay. To refuse, do nothing.";
+      setMessage(text);
+      say(text);
       return "";
     }
     let proof: { method: "confirm-button" | "passkey" | "device-key"; challenge?: string; response?: unknown; signature?: string } = {
@@ -1178,27 +1435,60 @@ function Approve({
             },
           });
       setArmed(true);
+      // The iOS fingerprint sheet is drawn by the system, so the studio draws its own copy of it.
+      const fingerAt = Date.now();
+      stageSend("finger", { state: "ask", id: request.id, merchant: request.merchantName, amount: request.debitAmount ?? null });
       if (quiet) {
         // the agent already said what to do
       } else if (spoken) say("Rest your finger on the Home button to pay.");
       else sayOurs({ what: "asking", id: request.id }, `${sentence} To pay, rest your finger on the Home button.`);
       setMessage(`${spoken ? "" : `${sentence}${consentNote} `}To pay, rest your finger on the Home button. To refuse, do nothing.`);
+      // iOS does not tell a website about a wrong finger: it lets the person try again, then offers the
+      // passcode, and only answers when the sheet closes. So the app closes the sheet itself after
+      // FINGER_WAIT_MS: an owner's finger takes a second or two, a stranger's never succeeds.
+      let timedOut = false;
+      const giveUp = useNative
+        ? null
+        : setTimeout(() => {
+            timedOut = true;
+            WebAuthnAbortService.cancelCeremony();
+          }, FINGER_WAIT_MS);
       try {
         const result = await ask;
+        if (giveUp) clearTimeout(giveUp);
+        stageSend("finger", { state: "ok", id: request.id });
+        if (spoken && !useNative) rememberFingerNoTap("ok");
         proof = useNative
           ? { method: "device-key", challenge: request.challenge, signature: result as string }
           : { method: "passkey", challenge: request.challenge, response: result };
       } catch {
-        // A website may not open the fingerprint prompt without a tap; the next tap goes straight to it.
-        const text = spoken && !useNative
-          ? "Tap the screen once, then rest your finger on the Home button to pay."
-          : "Not paid. Your fingerprint was not confirmed. Tap the screen to try again.";
-        setArmed(spoken && !useNative);
-        setMessage(text);
-        if (spoken && !useNative) return "waiting";
-        if (quiet) settleTool("not paid: the fingerprint was not confirmed. Nothing was paid. The customer can say pay to try again.");
-        if (!quiet) say(text);
-        return "not paid: the fingerprint was not confirmed. Nothing was paid. The customer can say pay to try again.";
+        if (giveUp) clearTimeout(giveUp);
+        // A quick failure means the sheet never opened (no tap yet). A later one means the finger was not
+        // recognised (we closed the sheet), or the sheet was cancelled: a real "not paid", said aloud.
+        const real = timedOut || Date.now() - fingerAt > 1500;
+        stageSend("finger", { state: real ? "fail" : "closed", id: request.id });
+        if (real || !spoken || useNative) {
+          setArmed(false);
+          retryByTap.current = true; // one tap anywhere opens the fingerprint again, as often as needed
+          const text = timedOut
+            ? "Not paid yet. That fingerprint was not recognised. Tap the screen or say pay to try again."
+            : "Not paid yet. The fingerprint was not confirmed. Tap the screen or say pay to try again.";
+          setMessage(text);
+          const forAgent = timedOut
+            ? "not paid: the fingerprint did not go through (tried several times). Nothing was paid and the payment is STILL WAITING. Tell the customer in one short sentence, then ask if they want to try again. If they say yes, try, again, ok, pay, or anything like it, call approve_payment AGAIN at once. They can try as many times as they want; never cancel the payment yourself. A tap on the screen also tries again."
+            : "not paid: the fingerprint was not confirmed (the prompt was cancelled). Nothing was paid and the payment is STILL WAITING. Tell the customer in one short sentence, then ask if they want to try again. If they say yes, try, again, ok, pay, or anything like it, call approve_payment AGAIN at once. They can try as many times as they want; never cancel the payment yourself. A tap on the screen also tries again.";
+          if (quiet) settleTool(forAgent);
+          else say(text);
+          return forAgent;
+        }
+        // This browser needs a tap before the fingerprint prompt: remember it, and have the voice say so now.
+        setArmed(true);
+        setMessage("Tap the screen once, then rest your finger on the Home button to pay.");
+        if (fingerNoTap() !== "tap") {
+          rememberFingerNoTap("tap");
+          live.session.current?.nudge("(The app: the fingerprint prompt could not open by itself on this iPad. Tell the customer now, once: tap the screen anywhere, then rest your finger on the Home button.)");
+        }
+        return "waiting";
       }
     } else if (!armed) {
       // No fingerprint: a voice "pay" or a first tap only arms; a physical tap pays.
@@ -1391,6 +1681,13 @@ function liveLabel(mode: LiveMode | "", standby = false) {
 
 /** The voice, in one lit panel: the glass orb, what was said, and the mic. Always on the side on iPad. */
 function VoiceStage({ live, onTalk, name, full = false }: { live: Live; onTalk: () => void; name?: string; full?: boolean }) {
+  const [stageOn, setStageOn] = useState(false);
+  const [studio, setStudio] = useState("");
+  useEffect(() => {
+    setStageOn(stageMode());
+    const t = setInterval(() => setStudio(stageStatus()), 1000);
+    return () => clearInterval(t);
+  }, []);
   const on = Boolean(live.mode);
   const lines = on ? live.lines.slice(-3) : [];
   return (
@@ -1398,7 +1695,8 @@ function VoiceStage({ live, onTalk, name, full = false }: { live: Live; onTalk: 
       <header className="vp-top">
         <span>
           <b>Pay Alone</b>
-          <span className={`vp-status ${live.mode}`}>{live.mode === "speaking" ? "Speaking" : live.mode === "listening" ? "Listening" : live.mode === "connecting" ? "Connecting" : live.standby ? "Waiting for “hello”" : "Ready"}</span>
+          <span className={`vp-status ${live.mode}`}>{live.mode === "speaking" ? "Speaking" : live.mode === "listening" ? "Listening" : live.mode === "connecting" ? "Connecting" : live.standby ? "Waiting for “hello”" : "Ready"}
+            {stageOn ? ` · Stage mode · studio ${studio === "SUBSCRIBED" ? "connected ✓" : studio ? `not connected (${studio})` : "starting"}` : ""}</span>
         </span>
         {on && (
           <button className="round dark" onClick={live.end} aria-label="End conversation">
@@ -1498,6 +1796,12 @@ function Home(props: {
   };
   const today = new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" });
   const [showCode, setShowCode] = useState(false);
+  const [showGrow, setShowGrow] = useState(false);
+  useEffect(() => {
+    const openGrow = () => setShowGrow(true);
+    window.addEventListener("payalone:show-grow", openGrow);
+    return () => window.removeEventListener("payalone:show-grow", openGrow);
+  }, []);
   useEffect(() => {
     const open = () => setShowCode(true);
     window.addEventListener("payalone:show-code", open);
@@ -1549,6 +1853,32 @@ function Home(props: {
             </a>
           </div>
         </header>
+
+        {customer.balance && (
+          <section className="bal-card" aria-label="Account balance">
+            <div className="bal-dots" aria-hidden="true">
+              {BAL_DOTS.map((h, c) => (
+                <span key={c} className="bal-col">
+                  {Array.from({ length: 7 }, (_, k) => (
+                    <i key={k} className={k < h ? "on" : ""} style={k < h ? { animationDelay: `${(k * 0.16 + c * 0.05).toFixed(2)}s` } : undefined} />
+                  ))}
+                </span>
+              ))}
+            </div>
+            <div className="bal-left">
+              <span className="bal-title">
+                <span className="chip-coin" aria-hidden="true">
+                  {symbolOf(customer.balance.amount.assetCode)}
+                </span>
+                Account balance
+              </span>
+              <Money a={customer.balance.amount} size="lg" />
+            </div>
+            <button className="bal-say" onClick={() => say(`Your balance is ${speakAmount(customer.balance!.amount)}.`)} aria-label="Say my balance aloud">
+              <Icon name="speaker" size={20} />
+            </button>
+          </section>
+        )}
 
         {notice && (
           <div className={`status ${notice.good ? "good" : "bad"}`} role="status" aria-live="polite">
@@ -1615,7 +1945,8 @@ function Home(props: {
               <b>Spent this week</b>
               {active && <span className="pct">{pct}%</span>}
             </div>
-            {active ? <Money a={active.spent} size="lg" /> : <Money a={{ value: week.total, assetCode: customer.assetCode, assetScale: customer.assetScale }} size="lg" />}
+            {/* Real payments this week from the history: a new limit starts a new permission, not a new week. */}
+            <Money a={{ value: week.total, assetCode: customer.assetCode, assetScale: customer.assetScale }} size="lg" />
             <span className="muted">
               {week.paid} paid · {week.refused} not paid
             </span>
@@ -1711,6 +2042,15 @@ function Home(props: {
             <span>
               <b>Show my QR code</b>
               <span>Pay code {customer.payCode.replace(/(\d{3})(\d{3})/, "$1 $2")} · set it as lock screen</span>
+            </span>
+          </button>
+          <button className="safe safe-btn" onClick={() => setShowGrow(true)}>
+            <span className="safe-ic">
+              <Icon name="home" />
+            </span>
+            <span>
+              <b>Save and invest</b>
+              <span>Grow your money · live share prices · practice investing</span>
             </span>
           </button>
         </section>
@@ -1833,6 +2173,7 @@ function Home(props: {
 
       <VoicePanel live={live} onTalk={() => void talk()} name={name} />
       {showCode && <PayCodeSheet payCode={customer.payCode} say={say} onClose={() => setShowCode(false)} />}
+      {showGrow && <GrowSheet say={say} onStarted={() => { setShowGrow(false); props.refresh(); }} onClose={() => setShowGrow(false)} />}
       {live.mode && <LiveOverlay live={live} />}
     </div>
   );
@@ -1858,6 +2199,7 @@ function Limit({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
   const [confirmStop, setConfirmStop] = useState(false);
+  const [changing, setChanging] = useState(false);
 
   async function setLimit(e: React.FormEvent) {
     e.preventDefault();
@@ -1902,7 +2244,7 @@ function Limit({
         </span>
         <h2 id="limit-h">Spending limit</h2>
       </div>
-      {cap?.status === "active" ? (
+      {cap?.status === "active" && !changing ? (
         <>
           <p className="muted">Left this {cap.every}</p>
           <p className="amount">{formatAmount(cap.left)}</p>
@@ -1920,12 +2262,28 @@ function Limit({
           >
             <Icon name="speaker" size={22} /> Say what is left aloud
           </button>
+          <button
+            className="wide secondary"
+            onClick={() => {
+              setChanging(true);
+              setAmount("");
+              setEvery(cap.every);
+            }}
+          >
+            <Icon name="shield" size={22} /> Change my limit
+          </button>
           <button className="wide danger" disabled={busy} onClick={() => void stop()}>
             <Icon name="stop" size={22} /> {confirmStop ? "Tap again to stop everything" : "Stop everything"}
           </button>
         </>
       ) : (
         <form onSubmit={setLimit}>
+          {changing && cap?.status === "active" && (
+            <p>
+              Your limit now: <strong>{formatAmount(cap.limit)}</strong> every {cap.every}. Enter the new limit, then confirm it on your wallet&apos;s page. The old
+              limit stays until you do, and is cancelled once the new one is set.
+            </p>
+          )}
           <p>
             {cap?.status === "stopped" ? "You stopped all payments. " : ""}
             Set a limit once on your wallet&apos;s own page. After that you approve each payment here, and your wallet refuses anything over the limit.
@@ -1947,8 +2305,13 @@ function Limit({
             <option value="day">Day</option>
           </select>
           <button className="wide" disabled={busy} style={{ marginTop: "1rem" }}>
-            {busy ? "Opening your wallet…" : "Set my limit on the wallet's page"}
+            {busy ? "Opening your wallet…" : changing ? "Set my new limit on the wallet's page" : "Set my limit on the wallet's page"}
           </button>
+          {changing && (
+            <button type="button" className="wide secondary" onClick={() => setChanging(false)}>
+              Keep my current limit
+            </button>
+          )}
         </form>
       )}
       {error && (
@@ -1980,6 +2343,140 @@ function Meter({ spent, limit }: { spent: Amount; limit: Amount }) {
 
 /** Makes a picture with the pay code low on the screen, to set as the lock-screen wallpaper. */
 /** The pay code as a large QR, and setting it as the lock screen (once, with an Apple Shortcut). */
+type GrowView = {
+  saved: Amount | null;
+  holdings: { symbol: string; name: string; shares: string; cost: Amount; value: Amount | null }[];
+  market: { symbol: string; name: string; about: string; market: "NGX" | "US"; currency: "NGN" | "USD"; priceMinor: string; changeMonthBp: number | null; changeSixMonthBp?: number | null; asOf: string; source: string }[];
+  savingsReady: boolean;
+  investReady: boolean;
+};
+const priceOf = (q: GrowView["market"][number]) => (Number(q.priceMinor) / 100).toLocaleString("en-US", { maximumFractionDigits: 2 });
+const changeOf = (q: GrowView["market"][number]) =>
+  q.changeMonthBp === null ? "" : `${q.changeMonthBp >= 0 ? "up" : "down"} ${Math.abs(q.changeMonthBp / 100).toFixed(1)} percent this month`;
+const sixOf = (q: GrowView["market"][number]) =>
+  q.changeSixMonthBp == null ? "" : `${q.changeSixMonthBp >= 0 ? "up" : "down"} ${Math.abs(q.changeSixMonthBp / 100).toFixed(1)} percent over six months`;
+/** Ranked by the last six months (facts about the past), then each share with both changes. */
+function marketLine(m: GrowView["market"]) {
+  const ranked = m.filter((q) => q.changeSixMonthBp != null).sort((a, b) => b.changeSixMonthBp! - a.changeSixMonthBp!);
+  const rank = ranked.length ? `Ranked by the last six months: ${ranked.map((q, i) => `${i + 1}. ${q.name} ${sixOf(q)}`).join("; ")}. Each share: ` : "";
+  return (
+    rank +
+    m
+      .map((q) => {
+        const ch = [changeOf(q), sixOf(q)].filter(Boolean).join(", ");
+        return `${q.name} (${q.about}): ${priceOf(q)} ${q.currency === "NGN" ? "naira" : "dollars"} a share${ch ? ", " + ch : ""}`;
+      })
+      .join("; ")
+  );
+}
+function growLine(g: GrowView) {
+  const s = g.saved ? `Saved so far: ${speakAmount(g.saved)}.` : "Nothing saved yet.";
+  const h = g.holdings.length
+    ? " Practice investments: " + g.holdings.map((x) => `${x.name}, ${x.shares} shares, cost ${speakAmount(x.cost)}${x.value ? `, worth ${speakAmount(x.value)} now` : ""}`).join("; ") + "."
+    : " No practice investments yet.";
+  return s + h;
+}
+
+function GrowSheet({ say, onStarted, onClose }: { say: (t: string) => void; onStarted: () => void; onClose: () => void }) {
+  const [g, setG] = useState<GrowView | null>(null);
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState("");
+  useEffect(() => {
+    void api<GrowView>("/api/wallet/grow")
+      .then(setG)
+      .catch((e) => setErr(errorText(e).message));
+  }, []);
+  async function start(body: Record<string, string>, label: string) {
+    setBusy(label);
+    setErr("");
+    try {
+      await api("/api/wallet/grow", { method: "POST", body: { currency: "USD", ...body } });
+      say(`${label}. Your wallet is getting the exact amount. Then approve it with your fingerprint.`);
+      onStarted();
+    } catch (e) {
+      setErr(errorText(e).message);
+      say(errorText(e).message);
+    } finally {
+      setBusy("");
+    }
+  }
+  return (
+    <div className="sheet-back" role="dialog" aria-modal="true" aria-labelledby="grow-h" onClick={onClose}>
+      <div className="sheet" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 640, maxHeight: "90vh", overflow: "auto" }}>
+        <h2 id="grow-h">Save and invest</h2>
+        <p>Real test money moves with Open Payments, approved by your fingerprint. Investing is <b>practice</b>: live prices, no real shares, not financial advice.</p>
+        {err && <p role="alert">{err}</p>}
+        {!g && !err && <p>Loading…</p>}
+        {g && (
+          <>
+            <h3>Savings</h3>
+            <p>{g.saved ? <>Saved so far: <b>{formatAmount(g.saved)}</b></> : "Nothing saved yet."}</p>
+            {g.savingsReady ? (
+              <p style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {["1", "2", "5"].map((a) => (
+                  <button key={a} className="safe-btn" disabled={Boolean(busy)} onClick={() => void start({ action: "save", amount: a }, `Saving ${a} dollars`)}>
+                    Save ${a} (≈ ₦{nairaOf({ value: String(Number(a) * 100), assetCode: "USD", assetScale: 2 })})
+                  </button>
+                ))}
+              </p>
+            ) : (
+              <p>The savings wallet is not set up yet.</p>
+            )}
+            <h3>Practice investments</h3>
+            {g.holdings.length ? (
+              <ul>
+                {g.holdings.map((h) => (
+                  <li key={h.symbol}>
+                    {h.name}: {h.shares} shares · cost {formatAmount(h.cost)}
+                    {h.value ? ` · worth ${formatAmount(h.value)} now` : ""}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p>None yet.</p>
+            )}
+            {(["NGX", "US"] as const).map((mk) => (
+              <div key={mk}>
+                <h3>{mk === "NGX" ? "Nigerian Exchange (NGX)" : "US shares"}</h3>
+                <p style={{ fontSize: 13 }}>
+                  {mk === "NGX" ? "Daily prices from NGX; one-month change from TradingView." : "From Yahoo Finance, delayed; naira at the CBN rate of 16 Nov (₦1,353.97 per $1)."} Past changes do not predict the future.
+                </p>
+                <ul style={{ listStyle: "none", padding: 0 }}>
+                  {g.market
+                    .filter((q) => q.market === mk)
+                    .map((q) => (
+                      <li key={q.symbol} style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", padding: "6px 0", borderBottom: "1px solid #0001" }}>
+                        <span>
+                          <b>{q.name}</b> · {q.currency === "NGN" ? `₦${priceOf(q)}` : `$${priceOf(q)} (≈ ₦${nairaOf({ value: q.priceMinor, assetCode: "USD", assetScale: 2 })})`}
+                          {q.changeMonthBp !== null && ` · ${q.changeMonthBp >= 0 ? "▲" : "▼"} ${Math.abs(q.changeMonthBp / 100).toFixed(1)}% this month`}
+                          <br />
+                          <small>{q.about}</small>
+                        </span>
+                        <button
+                          className="safe-btn"
+                          disabled={Boolean(busy) || !g.investReady}
+                          onClick={() => void start({ action: "invest", share: q.symbol, amount: "1" }, `Practice investing 1 dollar, about 1,354 naira, in ${q.name}`)}
+                        >
+                          Invest ₦1,354 ($1)
+                        </button>
+                      </li>
+                    ))}
+                </ul>
+              </div>
+            ))}
+            <p>
+              <button className="safe-btn" onClick={() => say(`${growLine(g)} Live prices: ${marketLine(g.market)}. These are facts, not advice.`)}>
+                Read it aloud
+              </button>
+            </p>
+          </>
+        )}
+        <button className="safe-btn" onClick={onClose}>Close</button>
+      </div>
+    </div>
+  );
+}
+
 function PayCodeSheet({ payCode, say, onClose }: { payCode: string; say: (t: string) => void; onClose: () => void }) {
   const digits = payCode.split("").join(" ");
   const [link, setLink] = useState("");
@@ -2045,45 +2542,36 @@ function PayCodeSheet({ payCode, say, onClose }: { payCode: string; say: (t: str
 
 function LockScreenPicture({ payCode }: { payCode: string }) {
   const [problem, setProblem] = useState("");
+  const [busy, setBusy] = useState(false);
 
+  // A home-screen web app on iPad cannot download files, so the picture goes through the share sheet
+  // ("Save Image"); where that is missing, it opens so the person can touch and hold it to save.
   async function make() {
     setProblem("");
+    setBusy(true);
     try {
-      const svg = await (await fetch("/api/wallet/paycode", { cache: "no-store" })).text();
-      const img = new Image();
-      await new Promise<void>((resolve, reject) => {
-        img.onload = () => resolve();
-        img.onerror = () => reject(new Error("image"));
-        img.src = `data:image/svg+xml;base64,${btoa(svg)}`;
-      });
-      const w = 1668;
-      const h = 2224; // iPad Air 3 portrait
-      const canvas = document.createElement("canvas");
-      canvas.width = w;
-      canvas.height = h;
-      const ctx = canvas.getContext("2d")!;
-      ctx.fillStyle = "#ffffff";
-      ctx.fillRect(0, 0, w, h);
-      const size = 900;
-      ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(img, (w - size) / 2, h - size - 420, size, size); // below the clock, above the bottom edge
-      ctx.fillStyle = "#10172a";
-      ctx.font = "bold 96px system-ui, sans-serif";
-      ctx.textAlign = "center";
-      ctx.fillText(`Pay code ${payCode.split("").join(" ")}`, w / 2, h - 260);
-      const a = document.createElement("a");
-      a.href = canvas.toDataURL("image/png");
-      a.download = "pay-code-lock-screen.png";
-      a.click();
+      const { url } = await api<{ url: string }>("/api/wallet/lockscreen");
+      const blob = await (await fetch(url, { cache: "no-store" })).blob();
+      const file = new File([blob], `pay-code-${payCode}.png`, { type: "image/png" });
+      const nav = navigator as Navigator & { canShare?: (d: { files: File[] }) => boolean };
+      if (nav.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file], title: "My pay code" }).catch((e: unknown) => {
+          if (!(e instanceof Error && e.name === "AbortError")) throw e;
+        });
+      } else {
+        window.open(url, "_blank");
+      }
     } catch {
-      setProblem("Could not make the picture on this device.");
+      setProblem("Could not make the picture. Use “Open the lock-screen picture” instead.");
+    } finally {
+      setBusy(false);
     }
   }
 
   return (
     <>
-      <button className="wide secondary" onClick={() => void make()}>
-        Make a lock-screen picture
+      <button className="wide secondary" onClick={() => void make()} disabled={busy}>
+        {busy ? "Making the picture…" : "Save my pay code picture"}
       </button>
       {problem && <p role="alert">{problem}</p>}
     </>

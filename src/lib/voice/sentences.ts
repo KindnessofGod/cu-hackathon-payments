@@ -119,7 +119,11 @@ const W: Record<Lang, Words> = {
 
 export function askingSentence(lang: Lang, a: { name: string; known: boolean; receive: Amount; debit: Amount }) {
   const w = W[lang];
-  return w.asking(a.known ? a.name : w.newPerson(a.name), speakAmount(a.receive), speakAmount(a.debit));
+  const r = speakAmount(a.receive);
+  const d = speakAmount(a.debit);
+  const full = w.asking(a.known ? a.name : w.newPerson(a.name), r, d);
+  // No fee: the same amount twice is just noise, so keep only the first sentence ("X is asking for ...").
+  return r === d ? full.slice(0, full.indexOf(". ") + 1) || full : full;
 }
 
 export function resultSentence(lang: Lang, a: { paid: boolean; name: string; debit?: Amount }) {

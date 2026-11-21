@@ -2,7 +2,7 @@
 import { randomInt } from "crypto";
 import { challengeIsValid, issueChallenge, verifyApproval, type ApprovalChallenge, type ApprovalProof } from "./approval";
 import { makeInterval, periodEnd, periodKey, type Every } from "./interval";
-import { exceedsCap, formatAmount, parseMajor, remainingOfCap, speakAmount, type Amount } from "./money";
+import { amountFromSpeech, exceedsCap, formatAmount, parseMajor, remainingOfCap, speakAmount, type Amount } from "./money";
 import { alertCustomer } from "./push";
 import { gateway, isSimulated, OpError, type OpErrorKind, type QuoteInfo, type WalletInfo } from "./op";
 import { verifyInteractionHash } from "./op/hash";
@@ -67,6 +67,11 @@ export interface Customer {
   deviceKeyChallenge?: { challenge: string; expiresAt: string };
   /** More devices (or the Home Screen app) linked with a one-time link code. Hashes only. */
   otherDeviceHashes?: string[];
+  /**
+   * The account balance as the customer read it from their wallet at one moment. Open Payments has no
+   * balance to read, so Pay Alone works the balance out from this: the figure minus payments it made since.
+   */
+  balanceNote?: { amount: Amount; at: string; source: string };
 }
 
 function hasFingerprint(c: Customer): boolean {
@@ -101,6 +106,10 @@ export interface PaymentRequest {
   expiresAt: string;
   /** The customer started this payment themselves (by voice), instead of a seller asking. */
   outgoing?: boolean;
+  /** Money the customer moves to grow it: into their savings wallet, or into the practice investment wallet. */
+  purpose?: "save" | "invest";
+  /** For a practice investment: the share and the live price it was bought at (cents), and the shares in millionths. */
+  invest?: { symbol: string; name: string; priceMinor: string; unitsMicro: string; currency?: "NGN" | "USD" };
 }
 
 interface GrantSession {
@@ -175,14 +184,21 @@ export async function recentCustomers() {
   return [...seen.values()];
 }
 
-export async function createRequest(payCode: string, amountMajor: string): Promise<PaymentRequest> {
+/** currency "NGN": the seller typed naira; on a dollar wallet it becomes dollars at the CBN rate. */
+export async function createRequest(payCode: string, amountMajor: string, currency?: "NGN"): Promise<PaymentRequest> {
   const code = payCode.replace(/\D/g, "");
   const customer = (await store().list<Customer>("customers")).find((c) => c.payCode === code);
   if (!customer) throw new DomainError("not_found", "No customer has that pay code. Check the six digits.");
 
   const g = gateway("merchant");
   const wallet = await g.getWallet(merchantWalletUrl());
-  const minor = parseMajor(amountMajor, wallet.assetScale);
+  const typed = amountMajor.trim().replace(/,/g, "");
+  const minor =
+    currency === "NGN" && wallet.assetCode === "USD"
+      ? /^\d+(\.\d{1,2})?$/.test(typed)
+        ? (amountFromSpeech(typed, wallet.assetCode, wallet.assetScale)?.minor ?? null)
+        : null
+      : parseMajor(amountMajor, wallet.assetScale);
   if (!minor) throw new DomainError("bad_input", "Enter an amount greater than zero, for example 2000.");
 
   const now = Date.now();
@@ -202,6 +218,16 @@ export async function createRequest(payCode: string, amountMajor: string): Promi
     createdAt: new Date(now).toISOString(),
     expiresAt,
   };
+  // One request from a seller at a time: a newer one (a second tap on Send, a corrected amount) replaces
+  // any older one still unanswered, so the customer never pays and then hears the same seller ask again.
+  for (const old of await store().list<PaymentRequest>("requests")) {
+    if (old.customerId !== customer.id || old.merchantWalletId !== wallet.id || old.outgoing) continue;
+    if (old.status !== "waiting" && old.status !== "quoted") continue;
+    old.status = "expired";
+    old.failure = { kind: "expired", message: `Replaced by a newer request from ${request.merchantName}. No money moved.` };
+    old.approval = undefined;
+    await store().put("requests", old.id, old);
+  }
   await store().put("requests", request.id, request);
   await alertCustomer(customer.id, {
     title: "Payment request",
@@ -244,7 +270,7 @@ export function findPayee(payees: Payee[], said: string): Payee | null {
  * The incoming payment is created on the receiver's wallet with a non-interactive grant, as Open
  * Payments allows for any client.
  */
-export async function sendToContact(customer: Customer, to: string, amountMajor: string): Promise<PaymentRequest> {
+export async function sendToContact(customer: Customer, to: string, amountMajor: string): Promise<PaymentRequest & { saidNaira?: string }> {
   const payees = await payeesOf(customer);
   const contact = findPayee(payees, to);
   if (!contact) {
@@ -256,19 +282,37 @@ export async function sendToContact(customer: Customer, to: string, amountMajor:
         : "You have not paid anybody, and nobody has asked you for money, so there is nobody to send to yet.",
     );
   }
-  if (await pendingRequest(customer)) throw new DomainError("wrong_state", "Another payment is waiting. Answer that one first.");
+  return prepareOutgoing(customer, contact.walletId, contact.name, amountMajor);
+}
+
+/**
+ * A payment the customer starts themselves, to any wallet address: it becomes an open request like a
+ * seller's. The incoming payment is created on the receiving wallet with a non-interactive grant, the
+ * wallet quotes it, and it is approved the same way, with the fingerprint.
+ */
+export async function prepareOutgoing(
+  customer: Customer,
+  walletUrl: string,
+  name: string,
+  amountMajor: string,
+  extra: { purpose?: PaymentRequest["purpose"]; description?: string; check?: (a: Amount) => Promise<Pick<PaymentRequest, "invest">> } = {},
+): Promise<PaymentRequest & { saidNaira?: string }> {
+  // Nothing is cancelled for the customer: they decide about the payment that is waiting first.
+  const waiting = await pendingRequest(customer);
+  if (waiting) throw new DomainError("wrong_state", `A payment is already waiting for an answer: ${describeWaiting(waiting)}. Pay it or cancel it first.`);
   const g = gateway("wallet");
-  const wallet = await g.getWallet(contact.walletId);
-  const minor = parseMajor(amountMajor.replace(/[^0-9.]/g, ""), wallet.assetScale);
-  if (!minor) throw new DomainError("bad_input", "Say an amount greater than zero, for example five hundred.");
+  const wallet = await g.getWallet(walletUrl);
+  const said = amountFromSpeech(amountMajor, wallet.assetCode, wallet.assetScale);
+  if (!said) throw new DomainError("bad_input", "Say an amount greater than zero, for example five thousand naira.");
+  const requested: Amount = { value: said.minor, assetCode: wallet.assetCode, assetScale: wallet.assetScale };
+  const more = extra.check ? await extra.check(requested) : {};
   const now = Date.now();
   const expiresAt = new Date(now + REQUEST_TTL_MS).toISOString();
-  const requested: Amount = { value: minor, assetCode: wallet.assetCode, assetScale: wallet.assetScale };
-  const incoming = await g.createIncomingPayment({ wallet, amount: requested, expiresAt, description: "Sent with Pay Alone" });
+  const incoming = await g.createIncomingPayment({ wallet, amount: requested, expiresAt, description: extra.description ?? "Sent with Pay Alone" });
   const request: PaymentRequest = {
     id: randomToken(12),
     merchantWalletId: wallet.id,
-    merchantName: contact.name,
+    merchantName: name,
     customerId: customer.id,
     customerPayCode: customer.payCode,
     requested: incoming.incomingAmount ?? requested,
@@ -277,9 +321,20 @@ export async function sendToContact(customer: Customer, to: string, amountMajor:
     createdAt: new Date(now).toISOString(),
     expiresAt,
     outgoing: true,
+    purpose: extra.purpose,
+    ...more,
   };
   await store().put("requests", request.id, request);
-  return request;
+  return said.saidNaira ? { ...request, saidNaira: said.saidNaira } : request;
+}
+
+/** The waiting payment in words, e.g. "Mama Chris is asking you for 5,000 dollars, about 6,769,850 naira". */
+export function describeWaiting(r: PaymentRequest): string {
+  const amount = speakAmount(r.quote?.debitAmount ?? r.requested);
+  if (!r.outgoing) return `${r.merchantName} is asking you for ${amount}`;
+  if (r.purpose === "save") return `saving ${amount} into your savings`;
+  if (r.purpose === "invest") return `a practice investment of ${amount}${r.invest ? ` in ${r.invest.name}` : ""}`;
+  return `sending ${amount} to ${r.merchantName}`;
 }
 
 export type MerchantStatus = "waiting" | "received" | "declined" | "expired" | "failed";
@@ -412,12 +467,15 @@ export function capSummary(cap: Cap | undefined) {
   };
 }
 
-export async function startCap(customer: Customer, amountMajor: string, every: Every, baseUrl: string): Promise<string> {
-  const minor = parseMajor(amountMajor, customer.wallet.assetScale);
+export async function startCap(customer: Customer, amountMajor: string, every: Every, baseUrl: string): Promise<{ redirectUrl: string; limit: Amount }> {
+  // Typed in the form: in the wallet's currency. Said to the voice: naira unless "dollars" (see amountFromSpeech).
+  const minor = /[a-z$]/i.test(amountMajor)
+    ? amountFromSpeech(amountMajor, customer.wallet.assetCode, customer.wallet.assetScale)?.minor
+    : parseMajor(amountMajor, customer.wallet.assetScale);
   if (!minor) throw new DomainError("bad_input", "Enter a limit greater than zero, for example 20000.");
   if (every !== "day" && every !== "week") throw new DomainError("bad_input", "Choose a day or a week.");
   const limit: Amount = { value: minor, assetCode: customer.wallet.assetCode, assetScale: customer.wallet.assetScale };
-  return startGrant(customer, { purpose: "cap", limit, interval: makeInterval(every, new Date()), every }, baseUrl);
+  return { redirectUrl: await startGrant(customer, { purpose: "cap", limit, interval: makeInterval(every, new Date()), every }, baseUrl), limit };
 }
 
 async function startGrant(
@@ -492,6 +550,16 @@ export async function handleCallback(
 
   if (session.purpose === "cap") {
     const now = Date.now();
+    // A new limit replaces the old one: the old permission is cancelled on the wallet, so only one stands.
+    const old = customer.cap;
+    if (old?.status === "active") {
+      try {
+        const o = JSON.parse(open(old.sealed)) as CapSecrets;
+        await gateway("wallet").cancelGrant({ continueUri: o.continueUri, continueToken: o.continueToken });
+      } catch {
+        // the old permission may already have expired; the new one is set either way
+      }
+    }
     customer.cap = {
       limit: session.limit,
       interval: session.interval!,
@@ -708,12 +776,13 @@ async function pay(customer: Customer, r: PaymentRequest, accessToken: string): 
       cap.walletReportedSpent = out.grantSpentDebitAmount;
     }
     const known = customer.contacts[r.merchantWalletId];
-    customer.contacts[r.merchantWalletId] = {
-      walletId: r.merchantWalletId,
-      name: r.merchantName,
-      paidCount: (known?.paidCount ?? 0) + 1,
-      lastPaidAt: r.paid.at,
-    };
+    if (!r.purpose)
+      customer.contacts[r.merchantWalletId] = {
+        walletId: r.merchantWalletId,
+        name: r.merchantName,
+        paidCount: (known?.paidCount ?? 0) + 1,
+        lastPaidAt: r.paid.at,
+      };
     await store().put("customers", customer.id, customer);
   } catch (e) {
     const failure = failureFrom(e);
@@ -732,6 +801,27 @@ async function pay(customer: Customer, r: PaymentRequest, accessToken: string): 
 // ---------- history (payments made through this app only) ----------
 
 const HISTORY_LIMIT = 20;
+
+/**
+ * The balance Pay Alone works out: the figure the customer read from their wallet, minus every payment
+ * Pay Alone made after that moment. Payments made elsewhere and money received are not seen.
+ */
+export async function balanceEstimate(customer: Customer): Promise<{ amount: Amount; asOf: string; source: string; paidSince: Amount; count: number } | null> {
+  const note = customer.balanceNote;
+  if (!note) return null;
+  const paid = (await store().list<PaymentRequest>("requests")).filter(
+    (r) => r.customerId === customer.id && r.status === "paid" && r.paid && r.paid.at > note.at && r.paid.debitAmount.assetCode === note.amount.assetCode,
+  );
+  let spent = BigInt(0);
+  for (const r of paid) spent += BigInt(r.paid!.debitAmount.value);
+  return {
+    amount: { ...note.amount, value: (BigInt(note.amount.value) - spent).toString() },
+    asOf: note.at,
+    source: note.source,
+    paidSince: { ...note.amount, value: spent.toString() },
+    count: paid.length,
+  };
+}
 
 export async function customerHistory(customer: Customer) {
   const mine = (await store().list<PaymentRequest>("requests"))
@@ -781,6 +871,8 @@ function historyItem(r: PaymentRequest) {
     debitAmount: r.paid?.debitAmount ?? r.quote?.debitAmount,
     receiveAmount: r.paid?.receiveAmount ?? r.quote?.receiveAmount,
     approvedVia: r.status === "paid" ? (r.consentBy === "cap" ? ("limit" as const) : ("wallet-page" as const)) : undefined,
+    purpose: r.purpose,
+    invest: r.invest,
     failure: r.failure ? { kind: r.failure.kind, message: r.failure.message, walletSaid: r.failure.walletSaid } : undefined,
   };
 }
@@ -795,6 +887,8 @@ export function publicRequest(r: PaymentRequest, customer: Customer) {
     merchantName: r.merchantName,
     knownPayee: Boolean(known),
     outgoing: Boolean(r.outgoing),
+    purpose: r.purpose,
+    invest: r.invest,
     timesPaidBefore: known?.paidCount ?? 0,
     requested: r.requested,
     debitAmount: r.quote?.debitAmount,
