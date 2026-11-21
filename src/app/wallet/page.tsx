@@ -36,6 +36,9 @@ const symbolOf = (code: string) => SYMBOL[code] ?? code;
 const titleCase = (n: string) => n.replace(/\b\p{L}/gu, (c) => c.toUpperCase());
 
 /** An amount with a small raised currency sign. Screen readers hear it spoken in full. */
+/** Column heights for the balance card's dot pattern (design A), rising to the right edge. */
+const BAL_DOTS = [1, 2, 2, 3, 2, 4, 3, 3, 5, 4, 3, 5, 6, 4, 5, 6, 7, 6, 5, 6, 7, 6, 7, 7, 6, 7, 7, 7, 7, 7, 7, 7, 7];
+
 function Money({ a, size = "md" }: { a: Amount; size?: "sm" | "md" | "lg" | "xl" }) {
   const num = formatAmount(a).slice(a.assetCode.length + 1);
   return (
@@ -1760,24 +1763,27 @@ function Home(props: {
 
         {customer.balance && (
           <section className="bal-card" aria-label="Account balance">
-            <div className="bal-top">
+            <div className="bal-dots" aria-hidden="true">
+              {BAL_DOTS.map((h, c) => (
+                <span key={c} className="bal-col">
+                  {Array.from({ length: 7 }, (_, k) => (
+                    <i key={k} className={k < h ? "on" : ""} style={k < h ? { animationDelay: `${(k * 0.16 + c * 0.05).toFixed(2)}s` } : undefined} />
+                  ))}
+                </span>
+              ))}
+            </div>
+            <div className="bal-left">
               <span className="bal-title">
                 <span className="chip-coin" aria-hidden="true">
                   {symbolOf(customer.balance.amount.assetCode)}
                 </span>
                 Account balance
               </span>
-              <button className="bal-say" onClick={() => say(`Your balance is about ${speakAmount(customer.balance!.amount)}.`)} aria-label="Say my balance aloud">
-                <Icon name="speaker" size={20} />
-              </button>
+              <Money a={customer.balance.amount} size="lg" />
             </div>
-            <div className="bal-bottom">
-              <div className="bal-week">
-                <span className="bal-pill">−{formatAmount({ value: week.total, assetCode: customer.assetCode, assetScale: customer.assetScale })}</span>
-                <span>spent this week{active ? ` · ${formatAmount(active.left)} left of limit` : ""}</span>
-              </div>
-              <Money a={customer.balance.amount} size="xl" />
-            </div>
+            <button className="bal-say" onClick={() => say(`Your balance is about ${speakAmount(customer.balance!.amount)}.`)} aria-label="Say my balance aloud">
+              <Icon name="speaker" size={20} />
+            </button>
           </section>
         )}
 

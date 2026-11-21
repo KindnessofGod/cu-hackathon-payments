@@ -469,24 +469,42 @@ video.scan { width: 100%; border-radius: 16px; border: 2px solid var(--line); ba
 .takeover .approve.pay-sheet .avatar { width: 4.4rem; height: 4.4rem; font-size: 1.4rem; }
 .takeover .talk { background: rgba(255, 255, 255, 0.85); }
 
-/* Account balance at the top of the home screen, in the reference's language: a flat deep-green
-   card with a raised tab on top, a coin chip and label, one big number, one small lime pill. */
+/* Account balance at the top of the home screen (design A): a short flat deep-green card with a raised
+   tab, the balance on the left, and a dot equalizer running to the right edge. The lit dots rise from
+   the bottom to the top in a gentle wave; with Reduce Motion on they stay still. */
 .bal-card {
-  position: relative; display: grid; gap: 1.1rem; width: 100%; margin: 0.9rem 0 1rem; padding: 1.1rem 1.4rem 1.2rem;
-  border-radius: 1.6rem; background: #0f3b30; color: #fff;
+  position: relative; display: flex; align-items: center; width: 100%; min-height: 6.4rem; margin: 1.1rem 0 1rem;
+  padding: 0.9rem 1.4rem; border-radius: 1.6rem; background: #0f3b30; color: #fff;
   box-shadow: 0 14px 34px rgba(15, 59, 48, 0.16);
 }
 .bal-card::before {
-  /* the raised tab, as on the reference's Income card */
-  content: ""; position: absolute; left: 50%; top: -0.55rem; width: 34%; height: 1.2rem; transform: translateX(-50%);
-  background: #0f3b30; border-radius: 0.9rem 0.9rem 0 0;
+  content: ""; position: absolute; left: 50%; top: -0.5rem; width: 30%; height: 1rem; transform: translateX(-50%);
+  background: #0f3b30; border-radius: 0.8rem 0.8rem 0 0;
 }
-.bal-top, .bal-bottom { position: relative; display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
-.bal-bottom { align-items: flex-end; flex-wrap: wrap; }
-.bal-title { display: inline-flex; align-items: center; gap: 0.5rem; font-weight: 500; font-size: 0.95rem; }
-.bal-card .chip-coin { display: inline-grid; place-items: center; width: 1.6rem; height: 1.6rem; border-radius: 50%; background: #c3e88f; color: #0f3b30; font-weight: 700; font-size: 0.8rem; }
-.bal-say { display: grid; place-items: center; width: 2.6rem; height: 2.6rem; padding: 0; border: 0; border-radius: 50%; background: rgba(255, 255, 255, 0.1); color: #fff; cursor: pointer; }
-.bal-week { display: grid; gap: 0.35rem; font-size: 0.8rem; color: rgba(255, 255, 255, 0.6); }
-.bal-pill { width: fit-content; padding: 0.15rem 0.55rem; border-radius: 999px; background: #c3e88f; color: #0f3b30; font-weight: 700; font-size: 0.75rem; }
-.bal-card .money { color: #fff; font-weight: 500; letter-spacing: -0.02em; text-align: right; }
+.bal-dots {
+  position: absolute; top: 0.85rem; bottom: 0.85rem; right: 0; left: 46%; display: flex; align-items: flex-end; gap: 6px;
+  overflow: hidden; border-radius: 0 1.6rem 1.6rem 0;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 18%); mask-image: linear-gradient(90deg, transparent, #000 18%);
+}
+.bal-col { display: flex; flex: none; flex-direction: column-reverse; gap: 6px; }
+.bal-col i { display: block; width: 5px; height: 5px; border-radius: 50%; background: rgba(195, 232, 143, 0.16); }
+.bal-col i.on { background: #c3e88f; }
+@keyframes bal-rise {
+  0% { background: rgba(195, 232, 143, 0.16); transform: scale(0.8); }
+  18% { background: #c3e88f; transform: scale(1.15); }
+  60% { background: #c3e88f; transform: scale(1); }
+  100% { background: rgba(195, 232, 143, 0.16); transform: scale(0.8); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .bal-col i.on { animation: bal-rise 2.6s ease-out infinite backwards; }
+}
+.bal-left { position: relative; z-index: 1; display: grid; gap: 0.35rem; }
+.bal-title { display: inline-flex; align-items: center; gap: 0.5rem; font-weight: 500; font-size: 0.9rem; opacity: 0.92; }
+.bal-card .chip-coin { display: inline-grid; place-items: center; width: 1.4rem; height: 1.4rem; border-radius: 50%; background: #c3e88f; color: #0f3b30; font-weight: 700; font-size: 0.72rem; }
+.bal-say {
+  position: relative; z-index: 2; margin-left: auto; display: grid; place-items: center; width: 2.6rem; height: 2.6rem; padding: 0;
+  border: 0; border-radius: 50%; background: #164a3d; box-shadow: 0 0 0 7px #0f3b30; color: #fff; cursor: pointer;
+}
+.bal-card .money.lg, .dash .bal-card .money.lg { font-size: 2.3rem; }
+.bal-card .money { color: #fff; font-weight: 500; letter-spacing: -0.02em; line-height: 1.05; }
 .bal-card .money sup { color: rgba(255, 255, 255, 0.75); }
