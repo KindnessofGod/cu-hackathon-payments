@@ -445,12 +445,15 @@ export function capSummary(cap: Cap | undefined) {
   };
 }
 
-export async function startCap(customer: Customer, amountMajor: string, every: Every, baseUrl: string): Promise<string> {
-  const minor = parseMajor(amountMajor, customer.wallet.assetScale);
+export async function startCap(customer: Customer, amountMajor: string, every: Every, baseUrl: string): Promise<{ redirectUrl: string; limit: Amount }> {
+  // Typed in the form: in the wallet's currency. Said to the voice: naira unless "dollars" (see amountFromSpeech).
+  const minor = /[a-z$]/i.test(amountMajor)
+    ? amountFromSpeech(amountMajor, customer.wallet.assetCode, customer.wallet.assetScale)?.minor
+    : parseMajor(amountMajor, customer.wallet.assetScale);
   if (!minor) throw new DomainError("bad_input", "Enter a limit greater than zero, for example 20000.");
   if (every !== "day" && every !== "week") throw new DomainError("bad_input", "Choose a day or a week.");
   const limit: Amount = { value: minor, assetCode: customer.wallet.assetCode, assetScale: customer.wallet.assetScale };
-  return startGrant(customer, { purpose: "cap", limit, interval: makeInterval(every, new Date()), every }, baseUrl);
+  return { redirectUrl: await startGrant(customer, { purpose: "cap", limit, interval: makeInterval(every, new Date()), every }, baseUrl), limit };
 }
 
 async function startGrant(

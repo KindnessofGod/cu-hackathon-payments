@@ -502,6 +502,20 @@ export default function WalletPage() {
             // being asked for, the voice service can drop the tool result with that turn, and the agent
             // would keep asking for a finger that was already given.
             approve_payment: () => runApprove(),
+            // A new spending limit: only the wallet can grant it, on its own page, where the customer accepts.
+            change_limit: async (p) => {
+              try {
+                const every = String(p.every ?? "week").toLowerCase().startsWith("d") ? "day" : "week";
+                const r = await api<{ redirectUrl: string; limit: Amount }>("/api/wallet/cap", { method: "POST", body: { amount: String(p.amount ?? ""), every } });
+                setTimeout(() => {
+                  liveSession.current?.end();
+                  window.location.assign(r.redirectUrl);
+                }, 9000);
+                return `opening: in about 9 seconds the wallet's own page opens to confirm a new limit of ${speakAmount(r.limit)} a ${every}. Tell the customer now, in two short sentences: their wallet's page is opening, and they must accept the new limit there themselves; then they come back to Pay Alone. Until they accept, the old limit stays. This call will end when the page opens.`;
+              } catch (e) {
+                return `could not start: ${errorText(e).message} The limit did not change.`;
+              }
+            },
             refuse_payment: () => liveHandlers.current.refuse?.() ?? Promise.resolve("nothing to refuse: no payment is waiting right now."),
             send_money: async (p) => prepared(() => api<{ id: string; to: string }>("/api/wallet/send", { method: "POST", body: { to: String(p.to ?? ""), amount: String(p.amount ?? "") } })),
             save_money: async (p) =>
