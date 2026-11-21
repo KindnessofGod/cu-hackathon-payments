@@ -82,9 +82,10 @@ export function nairaOf(a: Amount): string | null {
 }
 
 /** For speech: "2,050 naira" or "12 dollars and 50 cents, about 16,925 naira". Never drops a non-zero fraction. */
+/** Spoken amounts are short: naira only, once ("about 5,000 naira"). The screen shows dollars as well. */
 export function speakAmount(a: Amount): string {
   const n = nairaOf(a);
-  return n && n !== "0" ? `${speakPlain(a)}, about ${n} naira` : speakPlain(a);
+  return n && n !== "0" ? `about ${n} naira` : speakPlain(a);
 }
 
 export function speakPlain(a: Amount): string {

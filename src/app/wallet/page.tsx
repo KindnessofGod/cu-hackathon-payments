@@ -5,7 +5,7 @@ import { AppBar, Icon } from "@/components/ui";
 import { api, errorText, type ApiError } from "@/lib/client";
 import { formatAmount, nairaOf, speakAmount, type Amount } from "@/lib/money";
 import { BrowserSpeechOutput, HostedSpeechOutput } from "@/lib/speech";
-import { startAuthentication, startRegistration } from "@simplewebauthn/browser";
+import { startAuthentication, startRegistration, WebAuthnAbortService } from "@simplewebauthn/browser";
 import { inNativeApp, nativeCreateKey, nativeSign } from "@/lib/native";
 import { canListen, recordAnswer } from "@/lib/listen";
 import type { Intent } from "@/lib/voice/intent";
@@ -37,6 +37,9 @@ const symbolOf = (code: string) => SYMBOL[code] ?? code;
 const titleCase = (n: string) => n.replace(/\b\p{L}/gu, (c) => c.toUpperCase());
 
 /** An amount with a small raised currency sign. Screen readers hear it spoken in full. */
+/** How long the fingerprint prompt stays open before the app closes it as not recognised. */
+const FINGER_WAIT_MS = 15000;
+
 /** Column heights for the balance card's dot pattern (design A), rising to the right edge. */
 const BAL_DOTS = [1, 2, 2, 3, 2, 4, 3, 3, 5, 4, 3, 5, 6, 4, 5, 6, 7, 6, 5, 6, 7, 6, 7, 7, 6, 7, 7, 7, 7, 7, 7, 7, 7];
 
@@ -413,7 +416,7 @@ export default function WalletPage() {
             await new Promise((w) => setTimeout(w, 1200 * (attempt + 1)));
           }
         }
-        const said = res.naira ? `The customer asked for ${res.naira} naira; the test wallet runs in dollars, so it is sent as its dollar value at the CBN rate. Say it as ${res.naira} naira, and also give the dollar amount. ` : "";
+        const said = res.naira ? `The customer asked for ${res.naira} naira; the test wallet runs in dollars, so it is sent as its dollar value at the CBN rate. Say it once, as ${res.naira} naira only; give the dollar amount only if they ask. ` : "";
         sentByVoice.current = res.id;
         liveFor.current = res.id;
         for (let i = 0; i < 25; i++) {
@@ -1377,34 +1380,51 @@ function Approve({
       } else if (spoken) say("Rest your finger on the Home button to pay.");
       else sayOurs({ what: "asking", id: request.id }, `${sentence} To pay, rest your finger on the Home button.`);
       setMessage(`${spoken ? "" : `${sentence}${consentNote} `}To pay, rest your finger on the Home button. To refuse, do nothing.`);
+      // iOS does not tell a website about a wrong finger: it lets the person try again, then offers the
+      // passcode, and only answers when the sheet closes. So the app closes the sheet itself after
+      // FINGER_WAIT_MS: an owner's finger takes a second or two, a stranger's never succeeds.
+      let timedOut = false;
+      const giveUp = useNative
+        ? null
+        : setTimeout(() => {
+            timedOut = true;
+            WebAuthnAbortService.cancelCeremony();
+          }, FINGER_WAIT_MS);
       try {
         const result = await ask;
+        if (giveUp) clearTimeout(giveUp);
         stageSend("finger", { state: "ok", id: request.id });
         if (spoken && !useNative) rememberFingerNoTap("ok");
         proof = useNative
           ? { method: "device-key", challenge: request.challenge, signature: result as string }
           : { method: "passkey", challenge: request.challenge, response: result };
       } catch {
-        // A quick failure means the sheet never opened (no tap yet); a later one means iOS gave up on the
-        // finger (wrong finger several times) or the sheet was cancelled.
-        stageSend("finger", { state: Date.now() - fingerAt > 1500 ? "fail" : "closed", id: request.id });
-        // A website may not open the fingerprint prompt without a tap; the next tap goes straight to it.
-        const text = spoken && !useNative
-          ? "Tap the screen once, then rest your finger on the Home button to pay."
-          : "Not paid. Your fingerprint was not confirmed. Tap the screen to try again.";
-        setArmed(spoken && !useNative);
-        setMessage(text);
-        if (spoken && !useNative) {
-          // This browser needs a tap before the fingerprint prompt: remember it, and have the voice say so now.
-          if (fingerNoTap() !== "tap") {
-            rememberFingerNoTap("tap");
-            live.session.current?.nudge("(The app: the fingerprint prompt could not open by itself on this iPad. Tell the customer now, once: tap the screen anywhere, then rest your finger on the Home button.)");
-          }
-          return "waiting";
+        if (giveUp) clearTimeout(giveUp);
+        // A quick failure means the sheet never opened (no tap yet). A later one means the finger was not
+        // recognised (we closed the sheet), or the sheet was cancelled: a real "not paid", said aloud.
+        const real = timedOut || Date.now() - fingerAt > 1500;
+        stageSend("finger", { state: real ? "fail" : "closed", id: request.id });
+        if (real || !spoken || useNative) {
+          setArmed(false);
+          const text = timedOut
+            ? "Not paid. That fingerprint was not recognised. Nothing was paid. Say pay to try again."
+            : "Not paid. The fingerprint was not confirmed. Nothing was paid. Say pay to try again.";
+          setMessage(text);
+          const forAgent = timedOut
+            ? "not paid: the fingerprint was not recognised, so the app closed the fingerprint prompt. Nothing was paid. Tell the customer in one short sentence, then ask if they want to try again (if yes, call approve_payment again)."
+            : "not paid: the fingerprint was not confirmed (the prompt was cancelled). Nothing was paid. Tell the customer in one short sentence, then ask if they want to try again (if yes, call approve_payment again).";
+          if (quiet) settleTool(forAgent);
+          else say(text);
+          return forAgent;
         }
-        if (quiet) settleTool("not paid: the fingerprint was not confirmed. Nothing was paid. The customer can say pay to try again.");
-        if (!quiet) say(text);
-        return "not paid: the fingerprint was not confirmed. Nothing was paid. The customer can say pay to try again.";
+        // This browser needs a tap before the fingerprint prompt: remember it, and have the voice say so now.
+        setArmed(true);
+        setMessage("Tap the screen once, then rest your finger on the Home button to pay.");
+        if (fingerNoTap() !== "tap") {
+          rememberFingerNoTap("tap");
+          live.session.current?.nudge("(The app: the fingerprint prompt could not open by itself on this iPad. Tell the customer now, once: tap the screen anywhere, then rest your finger on the Home button.)");
+        }
+        return "waiting";
       }
     } else if (!armed) {
       // No fingerprint: a voice "pay" or a first tap only arms; a physical tap pays.
@@ -1790,7 +1810,7 @@ function Home(props: {
               </span>
               <Money a={customer.balance.amount} size="lg" />
             </div>
-            <button className="bal-say" onClick={() => say(`Your balance is about ${speakAmount(customer.balance!.amount)}.`)} aria-label="Say my balance aloud">
+            <button className="bal-say" onClick={() => say(`Your balance is ${speakAmount(customer.balance!.amount)}.`)} aria-label="Say my balance aloud">
               <Icon name="speaker" size={20} />
             </button>
           </section>

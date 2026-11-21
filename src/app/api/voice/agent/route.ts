@@ -126,7 +126,7 @@ export async function GET(req: Request) {
 
     const bal = await balanceEstimate(customer);
     const balanceText = bal
-      ? `about ${speakAmount(bal.amount)}. Pay Alone works this out: the wallet showed ${speakAmount({ ...bal.amount, value: (BigInt(bal.amount.value) + BigInt(bal.paidSince.value)).toString() })} on ${when(bal.asOf)}, and ${bal.count} payment${bal.count === 1 ? "" : "s"} made through Pay Alone since then took ${speakAmount(bal.paidSince)}. Money received or paid outside Pay Alone is not counted.`
+      ? `${speakAmount(bal.amount)}. Pay Alone works this out: the wallet showed ${speakAmount({ ...bal.amount, value: (BigInt(bal.amount.value) + BigInt(bal.paidSince.value)).toString() })} on ${when(bal.asOf)}, and ${bal.count} payment${bal.count === 1 ? "" : "s"} made through Pay Alone since then took ${speakAmount(bal.paidSince)}. Money received or paid outside Pay Alone is not counted.`
       : "not known: the wallet does not let apps read the balance, and no figure from the wallet has been noted yet";
 
     return Response.json(
