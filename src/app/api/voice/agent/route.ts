@@ -40,7 +40,7 @@ function when(iso: string) {
 export async function GET(req: Request) {
   try {
     const q = new URL(req.url).searchParams;
-    const lang: Lang = isLang(q.get("lang")) ? (q.get("lang") as Lang) : "en";
+    const lang: Lang = isLang(q.get("lang")) ? (q.get("lang") as Lang) : "pcm";
     const native = q.get("native") === "1";
     const customer = await requireCustomer();
     const id = q.get("id");

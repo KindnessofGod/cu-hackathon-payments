@@ -256,10 +256,10 @@ function readPrefs(): VoicePrefs {
       natural: window.localStorage.getItem("naturalVoice") !== "off",
       listen: window.localStorage.getItem("voiceAnswer") !== "off",
       auto: window.localStorage.getItem("autoTalk") !== "off",
-      lang: l && l in LANG_NAMES ? l : "en",
+      lang: l && l in LANG_NAMES ? l : "pcm",
     };
   } catch {
-    return { on: true, natural: true, listen: true, auto: true, lang: "en" };
+    return { on: true, natural: true, listen: true, auto: true, lang: "pcm" };
   }
 }
 
@@ -313,7 +313,7 @@ export default function WalletPage() {
   const [state, setState] = useState<State | null>(null);
   const [loadError, setLoadError] = useState<ApiError | null>(null);
   const [notice, setNotice] = useState<{ text: string; good: boolean; walletSaid?: string } | null>(null);
-  const [prefs, setPrefs] = useState<VoicePrefs>({ on: true, natural: true, listen: true, auto: true, lang: "en" });
+  const [prefs, setPrefs] = useState<VoicePrefs>({ on: true, natural: true, listen: true, auto: true, lang: "pcm" });
   const appVoice = prefs.on;
   const spokenFor = useRef<string>("");
   // The one live voice conversation.
