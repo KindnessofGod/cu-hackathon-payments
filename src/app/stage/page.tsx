@@ -616,7 +616,7 @@ function Stage() {
   if (!test && locked)
     return (
       <main className="stg-center">
-        <MerchantKey what="The studio screen" onDone={findChannel} />
+        <MerchantKey what="The studio screen" onDone={findChannel} stage />
         <style>{css}</style>
       </main>
     );
