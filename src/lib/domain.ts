@@ -218,6 +218,16 @@ export async function createRequest(payCode: string, amountMajor: string, curren
     createdAt: new Date(now).toISOString(),
     expiresAt,
   };
+  // One request from a seller at a time: a newer one (a second tap on Send, a corrected amount) replaces
+  // any older one still unanswered, so the customer never pays and then hears the same seller ask again.
+  for (const old of await store().list<PaymentRequest>("requests")) {
+    if (old.customerId !== customer.id || old.merchantWalletId !== wallet.id || old.outgoing) continue;
+    if (old.status !== "waiting" && old.status !== "quoted") continue;
+    old.status = "expired";
+    old.failure = { kind: "expired", message: `Replaced by a newer request from ${request.merchantName}. No money moved.` };
+    old.approval = undefined;
+    await store().put("requests", old.id, old);
+  }
   await store().put("requests", request.id, request);
   await alertCustomer(customer.id, {
     title: "Payment request",
