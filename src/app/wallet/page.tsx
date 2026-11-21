@@ -37,6 +37,24 @@ const symbolOf = (code: string) => SYMBOL[code] ?? code;
 const titleCase = (n: string) => n.replace(/\b\p{L}/gu, (c) => c.toUpperCase());
 
 /** An amount with a small raised currency sign. Screen readers hear it spoken in full. */
+type SpokenLang = "pidgin" | "yoruba" | "hausa" | "english";
+/** A rough guess at the language of one spoken line, from words that only that language uses. */
+function spokenLanguage(text: string): SpokenLang | null {
+  const t = ` ${text.toLowerCase().replace(/[^a-zÀ-ɏḀ-ỿ' ]+/g, " ")} `;
+  if (/ (mo fe|mo fẹ|owo |fi ranse|e jo|ejo |e se |bawo|e kaaro|elo |melo|egberun|ẹgbẹ|jowo|ṣe) /.test(t)) return "yoruba";
+  if (/ (ina son|kudi|aika|biya|sannu|nawa|dubu|don allah|na gode) /.test(t)) return "hausa";
+  if (/ (abeg|wetin|dey|una|wahala|make we|make i|make you|i wan|wan send|wan pay|want send|go give|no be|don pay|e don|sabi|oya|how far|na im|na so|comot|wey|abi|sha|shey|abeg o) /.test(t)) return "pidgin";
+  // Several plain English words and no marker: English.
+  if (t.trim().split(/\s+/).length >= 4 && / (the|please|would|could|my|want to|how much|thank you|can you) /.test(t)) return "english";
+  return null;
+}
+const LANGUAGE_NUDGE: Record<SpokenLang, string> = {
+  pidgin: "LANGUAGE: the customer is speaking Nigerian Pidgin. From your next reply, answer ONLY in Nigerian Pidgin (for example: \"Okay o. How much you wan send?\", \"E don pay!\"), until they speak plain English again.",
+  yoruba: "LANGUAGE: the customer is speaking Yoruba. Call language_detection now to switch to Yoruba, then answer ONLY in Yoruba.",
+  hausa: "LANGUAGE: the customer is speaking Hausa. Call language_detection now to switch to Hausa, then answer ONLY in Hausa.",
+  english: "LANGUAGE: the customer is speaking plain English now. Answer in English (if you had switched language, call language_detection to switch back to English).",
+};
+
 /** How long the fingerprint prompt stays open before the app closes it as not recognised. */
 const FINGER_WAIT_MS = 15000;
 
@@ -424,7 +442,11 @@ export default function WalletPage() {
           const r = st?.pending;
           if (r && r.id === res.id && r.debitAmount && r.receiveAmount) {
             const consent = r.needsWalletConsent ? " There is no spending limit, so after the fingerprint the wallet will open its own page to confirm." : "";
-            return `${said}ready, not paid yet: ${r.merchantName} will receive ${speakAmount(r.receiveAmount)}. ${speakAmount(r.debitAmount)} will leave the customer's account, fees included.${consent} Ask the customer if they want to pay.`;
+            const recv = res.naira ? `${res.naira} naira` : speakAmount(r.receiveAmount);
+            const same = speakAmount(r.receiveAmount) === speakAmount(r.debitAmount);
+            return same
+              ? `${said}ready, not paid yet: ${r.merchantName} will receive ${recv}, no fee. Say it in ONE short sentence ("${r.merchantName} will get ${recv}. Shall I pay?"), not twice.${consent}`
+              : `${said}ready, not paid yet: ${r.merchantName} will receive ${recv}; ${speakAmount(r.debitAmount)} will leave the customer's account, fees included.${consent} Ask the customer if they want to pay.`;
           }
           if (!r || r.id !== res.id) {
             if (st?.last?.id === res.id) return `could not prepare: ${st.last.failure?.message ?? "the wallet did not accept it"}. Nothing was paid.`;
@@ -445,6 +467,7 @@ export default function WalletPage() {
   // One fingerprint approval at a time, started by the agent's tool or by the safety net.
   const approving = useRef(false);
   const saidPaid = useRef(true);
+  const spokeIn = useRef<SpokenLang | "">("");
   const runApprove = useCallback(async (): Promise<string> => {
     if (approving.current) return "not paid: the fingerprint prompt is already open. Wait for the customer's finger.";
     approving.current = true;
@@ -488,6 +511,14 @@ export default function WalletPage() {
           onMode: setLiveMode,
           onLine: (who, text) => {
             heardLines++;
+            // The agent often answers Pidgin or Yoruba in English; the app spots it and tells the agent directly.
+            if (who === "you") {
+              const lang = spokenLanguage(text);
+              if (lang && lang !== spokeIn.current) {
+                spokeIn.current = lang;
+                liveSession.current?.context(LANGUAGE_NUDGE[lang]);
+              }
+            }
             if (who === "app" && /success|congratulation|is paid|has been paid|don pay|ti san/i.test(text)) saidPaid.current = true;
             setLiveLines((l) => [...l, { who, text }]);
             // Safety net: the agent told the customer to use their finger but did not open the prompt.

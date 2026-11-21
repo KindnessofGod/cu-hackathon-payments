@@ -130,16 +130,18 @@ async function open(
       return result;
     };
   }
-  // Stage mode (big speakers): the microphone is off while Pay Alone speaks and for a moment after,
-  // so the hall's delayed copy of its voice is never heard as the customer talking.
+  // Stage mode forwards the agent's voice to the studio. The microphone used to be muted while Pay Alone
+  // spoke (and 1.5 s after) against hall echo, but the studio is far from the iPad: the gate only cut off
+  // the customer's first words and stopped interruptions, so it is off. MIC_GATE turns it back on.
   const stage = stageMode();
+  const MIC_GATE = false;
   const gate = {
     conv: null as VoiceConversation | null,
     mode: "listening" as "speaking" | "listening",
     fmt: via === "webrtc" ? "pcm_48000" : "pcm_16000",
     timer: undefined as ReturnType<typeof setTimeout> | undefined,
     apply() {
-      if (!stage || !gate.conv) return;
+      if (!stage || !MIC_GATE || !gate.conv) return;
       clearTimeout(gate.timer);
       if (gate.mode === "speaking") gate.conv.setMicMuted(true);
       else gate.timer = setTimeout(() => gate.conv?.setMicMuted(false), STAGE_TAIL_MS);
