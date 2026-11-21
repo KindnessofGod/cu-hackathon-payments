@@ -10,6 +10,7 @@ import { inNativeApp, nativeCreateKey, nativeSign } from "@/lib/native";
 import { canListen, recordAnswer } from "@/lib/listen";
 import type { Intent } from "@/lib/voice/intent";
 import { LIVE_KEY, stageBrief, stageOpen, stageSend, stageStatus } from "@/lib/stage";
+import { startMirror } from "@/lib/mirror";
 import { nudgeAudio, report, stageMode, startLive, successChime, type LiveMode, type LiveSession } from "@/lib/liveVoice";
 import { GlassOrb } from "@/components/GlassOrb";
 import { canWake, startWake } from "@/lib/wake";
@@ -709,6 +710,7 @@ export default function WalletPage() {
     if (!hasCustomer || !stageMode()) return;
     stageOpen(LIVE_KEY, (why) => report("studio feed", why));
     setStageKey(LIVE_KEY);
+    return startMirror((why) => report("studio feed", why));
   }, [hasCustomer]);
   useEffect(() => {
     if (!stageKey || !state?.customer) return;
@@ -1367,6 +1369,9 @@ function Approve({
             },
           });
       setArmed(true);
+      // The iOS fingerprint sheet is drawn by the system, so the studio draws its own copy of it.
+      const fingerAt = Date.now();
+      stageSend("finger", { state: "ask", id: request.id, merchant: request.merchantName, amount: request.debitAmount ?? null });
       if (quiet) {
         // the agent already said what to do
       } else if (spoken) say("Rest your finger on the Home button to pay.");
@@ -1374,11 +1379,15 @@ function Approve({
       setMessage(`${spoken ? "" : `${sentence}${consentNote} `}To pay, rest your finger on the Home button. To refuse, do nothing.`);
       try {
         const result = await ask;
+        stageSend("finger", { state: "ok", id: request.id });
         if (spoken && !useNative) rememberFingerNoTap("ok");
         proof = useNative
           ? { method: "device-key", challenge: request.challenge, signature: result as string }
           : { method: "passkey", challenge: request.challenge, response: result };
       } catch {
+        // A quick failure means the sheet never opened (no tap yet); a later one means iOS gave up on the
+        // finger (wrong finger several times) or the sheet was cancelled.
+        stageSend("finger", { state: Date.now() - fingerAt > 1500 ? "fail" : "closed", id: request.id });
         // A website may not open the fingerprint prompt without a tap; the next tap goes straight to it.
         const text = spoken && !useNative
           ? "Tap the screen once, then rest your finger on the Home button to pay."

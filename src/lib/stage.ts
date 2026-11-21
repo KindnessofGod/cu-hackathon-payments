@@ -1,8 +1,9 @@
 "use client";
 // The studio feed. The customer's device (in stage mode) sends what is happening — the request, the
-// spoken words, the orb's mode and the agent's own voice audio — over a Supabase Realtime broadcast
-// channel; /stage?k=… in the studio draws it. Nothing is stored. The channel name is a key the server
-// derives from the customer, so only someone given the stage link can listen.
+// spoken words, a live copy of its screen and the agent's own voice audio — over a Supabase Realtime
+// broadcast channel; /stage in the studio draws it. Nothing is stored. The channel name is a secret the
+// server gives only to the customer's device and to devices holding the merchant key (/api/stage), so a
+// stranger can neither watch nor inject anything into the studio screen.
 import { createClient, type RealtimeChannel, type SupabaseClient } from "@supabase/supabase-js";
 
 let client: SupabaseClient | null = null;
@@ -14,12 +15,24 @@ function sb(): SupabaseClient | null {
   return client;
 }
 
-export type StageEvent = "snap" | "mode" | "lines" | "audio" | "flush" | "level" | "prompt" | "ding";
+export type StageEvent = "snap" | "mode" | "lines" | "audio" | "flush" | "level" | "prompt" | "ding" | "dom" | "head" | "scroll" | "finger";
 
 /** The one studio channel: payalone.vercel.app/stage always shows the device that is in stage mode. */
 export const LIVE_KEY = "live";
 
-let out: { key: string; chan: RealtimeChannel; ready: boolean; status: string } | null = null;
+/** Asks the server for the studio channel's secret name. Null when this device may not use it. */
+export async function stageChannelName(): Promise<{ channel: string } | { error: string; locked: boolean }> {
+  try {
+    const r = await fetch("/api/stage", { cache: "no-store" });
+    const d = (await r.json().catch(() => null)) as { channel?: string; error?: { message?: string } } | null;
+    if (r.ok && d?.channel) return { channel: d.channel };
+    return { error: d?.error?.message ?? `HTTP ${r.status}`, locked: r.status === 403 };
+  } catch {
+    return { error: "offline", locked: false };
+  }
+}
+
+let out: { key: string; chan: RealtimeChannel | null; ready: boolean; status: string } | null = null;
 
 /** Opens the sending side (customer device in stage mode). */
 export function stageOpen(key = LIVE_KEY, onError?: (why: string) => void): void {
@@ -29,14 +42,23 @@ export function stageOpen(key = LIVE_KEY, onError?: (why: string) => void): void
     onError?.("studio feed not configured");
     return;
   }
-  if (out) void c.removeChannel(out.chan);
-  const chan = c.channel(`stage-${key}`, { config: { broadcast: { self: false, ack: false } } });
-  const me = { key, chan, ready: false, status: "connecting" };
-  out = me;
-  chan.subscribe((s, err) => {
-    me.ready = s === "SUBSCRIBED";
-    me.status = s;
-    if (s === "CHANNEL_ERROR" || s === "TIMED_OUT") onError?.(`${s} ${err?.message ?? ""}`);
+  if (out?.chan) void c.removeChannel(out.chan);
+  const me = { key, chan: null as RealtimeChannel | null, ready: false, status: "connecting" };
+  out = me as typeof out;
+  void stageChannelName().then((n) => {
+    if (out !== (me as typeof out)) return;
+    if ("error" in n) {
+      me.status = `no channel (${n.error})`;
+      onError?.(me.status);
+      return;
+    }
+    const chan = c.channel(`stage-${n.channel}`, { config: { broadcast: { self: false, ack: false } } });
+    me.chan = chan;
+    chan.subscribe((s, err) => {
+      me.ready = s === "SUBSCRIBED";
+      me.status = s;
+      if (s === "CHANNEL_ERROR" || s === "TIMED_OUT") onError?.(`${s} ${err?.message ?? ""}`);
+    });
   });
 }
 
@@ -47,13 +69,13 @@ export function stageStatus(): string {
 
 /** Sends one event to the studio; does nothing when stage mode is off or not connected. */
 export function stageSend(event: StageEvent, payload: Record<string, unknown>): void {
-  if (!out?.ready) return;
+  if (!out?.ready || !out.chan) return;
   void out.chan.send({ type: "broadcast", event, payload }).catch(() => {});
 }
 
-/** The studio side: listens to every event of one stage key. Returns a stop function. */
+/** The studio side: listens to every event of one channel (its secret name). Returns a stop function. */
 export function stageListen(
-  key: string,
+  channel: string,
   on: (event: StageEvent, payload: Record<string, unknown>) => void,
   status: (s: string) => void,
 ): () => void {
@@ -62,8 +84,8 @@ export function stageListen(
     status("not configured");
     return () => {};
   }
-  const chan = c.channel(`stage-${key}`, { config: { broadcast: { self: false } } });
-  for (const e of ["snap", "mode", "lines", "audio", "flush", "level", "prompt", "ding"] as StageEvent[]) {
+  const chan = c.channel(`stage-${channel}`, { config: { broadcast: { self: false } } });
+  for (const e of ["snap", "mode", "lines", "audio", "flush", "level", "prompt", "ding", "dom", "head", "scroll", "finger"] as StageEvent[]) {
     chan.on("broadcast", { event: e }, (m) => on(e, (m.payload ?? {}) as Record<string, unknown>));
   }
   chan.subscribe((s) => status(s));

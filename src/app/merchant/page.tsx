@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppBar, Icon } from "@/components/ui";
+import { MerchantKey } from "@/components/MerchantKey";
 import { api, errorText, type ApiError } from "@/lib/client";
 import { formatAmount as fmtPlain, nairaOf, type Amount } from "@/lib/money";
 
@@ -102,7 +103,8 @@ export default function MerchantPage() {
       <AppBar role="Seller" />
       <main>
         <h1>{data ? data.merchant.name : "Seller"}</h1>
-        {loadError && (
+        {loadError?.kind === "not_allowed" && <MerchantKey what="The seller page" onDone={load} />}
+        {loadError && loadError.kind !== "not_allowed" && (
           <div className="status bad" role="alert">
             <p>Could not load the seller wallet. {loadError.message}</p>
             {loadError.walletSaid && <p className="muted">The wallet said: {loadError.walletSaid}</p>}

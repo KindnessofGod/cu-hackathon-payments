@@ -1,14 +1,25 @@
 "use client";
-// The studio screen for a live demo on a big stage. It shows the customer's Pay Alone and the payee
-// side by side, drawn here from live events the customer's device sends (no screen video), and plays
-// the Pay Alone voice: the same audio the device receives from the voice service, forwarded.
-import { useEffect, useRef, useState } from "react";
+// The studio screen for a live demo on a big stage. Left two thirds: a live copy of the customer's
+// Pay Alone screen, drawn with the app's own styles from the HTML the iPad sends (no screen video). Right
+// third: the seller's side. On top: a copy of the iPad's fingerprint sheet, since iOS draws that one itself.
+// It also plays the Pay Alone voice: the same audio the iPad receives from the voice service, forwarded.
+// Locked with the merchant key: the channel's name is a secret from /api/stage.
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { GlassOrb } from "@/components/GlassOrb";
+import morphdom from "morphdom";
+import { GlassOrb, type OrbMode } from "@/components/GlassOrb";
+import { MerchantKey } from "@/components/MerchantKey";
 import { formatAmount, nairaOf, type Amount } from "@/lib/money";
-import { LIVE_KEY, stageListen, type StageEvent } from "@/lib/stage";
+import { stageChannelName, stageListen, type StageEvent } from "@/lib/stage";
 
-type Brief = { id: string; merchantName: string; outgoing: boolean; status: string; amount: Amount; receive: Amount | null } | null;
+type Brief = {
+  id: string;
+  merchantName: string;
+  outgoing: boolean;
+  status: string;
+  amount: Amount;
+  receive: Amount | null;
+} | null;
 type Snap = {
   name: string;
   left: Amount | null;
@@ -28,7 +39,10 @@ class Player {
   sources: AudioBufferSourceNode[] = [];
   data = new Uint8Array(256);
   constructor() {
-    const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    const Ctx =
+      window.AudioContext ??
+      (window as unknown as { webkitAudioContext: typeof AudioContext })
+        .webkitAudioContext;
     this.ctx = new Ctx();
     this.analyser = this.ctx.createAnalyser();
     this.analyser.fftSize = 512;
@@ -115,7 +129,8 @@ function tone(): string {
     const t = i / rate;
     const hz = t < 0.6 ? 523 : t < 1.2 ? 659 : 784;
     const env = Math.min(1, (t % 0.6) * 20) * Math.max(0, 1 - (t % 0.6) / 0.6);
-    const v = Math.round(Math.sin(2 * Math.PI * hz * t) * env * 0.5 * 32767) & 0xffff;
+    const v =
+      Math.round(Math.sin(2 * Math.PI * hz * t) * env * 0.5 * 32767) & 0xffff;
     bin += String.fromCharCode(v & 0xff, v >> 8);
   }
   return btoa(bin);
@@ -131,7 +146,10 @@ function ulaw(u: number): number {
   return (sign ? -s : s) / 32768;
 }
 
-const STATUS: Record<string, { text: string; tone: "wait" | "go" | "good" | "bad" }> = {
+const STATUS: Record<
+  string,
+  { text: string; tone: "wait" | "go" | "good" | "bad" }
+> = {
   waiting: { text: "Waiting for the customer", tone: "wait" },
   quoted: { text: "Waiting for the customer", tone: "wait" },
   consent: { text: "Wallet is confirming", tone: "go" },
@@ -148,6 +166,134 @@ function money(a: Amount | null | undefined): string {
   return `${formatAmount(a)}${n ? `  (≈ ₦${n})` : ""}`;
 }
 
+type HeadInfo = {
+  css: string[];
+  styles: string;
+  htmlClass: string;
+  htmlStyle: string;
+  bodyClass: string;
+  lang: string;
+};
+type Finger = {
+  state: "ask" | "ok" | "fail";
+  merchant: string;
+  amount: Amount | null;
+  at: number;
+} | null;
+
+async function gunzip(b64: string): Promise<string> {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  const stream = new Blob([bytes])
+    .stream()
+    .pipeThrough(new DecompressionStream("gzip"));
+  return new Response(stream).text();
+}
+
+/**
+ * The live copy of the iPad screen: a sandboxed frame (no scripts can run in it) holding the iPad's HTML
+ * and the app's own stylesheets. Updates are merged in place, so the app's animations keep running.
+ */
+class Screen {
+  w = 1180;
+  h = 820;
+  loaded = false;
+  private head = "";
+  private queue: (() => void)[] = [];
+  private order = 0;
+  constructor(
+    private frame: HTMLIFrameElement,
+    private onSize: () => void,
+  ) {
+    const ready = () => {
+      this.loaded = true;
+      const q = this.queue;
+      this.queue = [];
+      q.forEach((f) => f());
+    };
+    if (
+      frame.contentDocument?.readyState === "complete" &&
+      frame.contentDocument.body
+    )
+      ready();
+    else frame.addEventListener("load", ready, { once: true });
+  }
+  get doc(): Document | null {
+    return this.frame.contentDocument;
+  }
+  private when(f: () => void) {
+    if (this.loaded) f();
+    else this.queue.push(f);
+  }
+  setHead(h: HeadInfo) {
+    const key = JSON.stringify(h);
+    if (key === this.head) return;
+    this.head = key;
+    this.when(() => {
+      const d = this.doc;
+      if (!d) return;
+      d.head.querySelectorAll("[data-m]").forEach((n) => n.remove());
+      const base = d.createElement("base");
+      base.href = window.location.origin + "/";
+      base.setAttribute("data-m", "");
+      d.head.appendChild(base);
+      for (const href of h.css) {
+        const u = new URL(href, window.location.origin);
+        if (u.origin !== window.location.origin) continue; // only this site's own stylesheets
+        const l = d.createElement("link");
+        l.rel = "stylesheet";
+        l.href = u.pathname + u.search;
+        l.setAttribute("data-m", "");
+        d.head.appendChild(l);
+      }
+      const st = d.createElement("style");
+      st.setAttribute("data-m", "");
+      st.textContent = `${h.styles}\nhtml,body{scrollbar-width:none}::-webkit-scrollbar{display:none}img[src*="/api/"]{visibility:hidden}`;
+      d.head.appendChild(st);
+      d.documentElement.className = h.htmlClass;
+      if (h.htmlStyle) d.documentElement.setAttribute("style", h.htmlStyle);
+      d.documentElement.lang = h.lang || "en";
+      d.body.className = h.bodyClass;
+    });
+  }
+  async setDom(p: { z: string; w: number; h: number; sy: number; sx: number }) {
+    const n = ++this.order;
+    const html = await gunzip(p.z);
+    if (n !== this.order) return; // a newer copy already arrived
+    this.when(() => {
+      const d = this.doc;
+      if (!d) return;
+      if (p.w && p.h && (p.w !== this.w || p.h !== this.h)) {
+        this.w = p.w;
+        this.h = p.h;
+        this.onSize();
+      }
+      const next = d.createElement("body");
+      next.innerHTML = html;
+      morphdom(d.body, next, {
+        childrenOnly: true,
+        onBeforeElUpdated: (from, to) => !from.isEqualNode(to),
+      });
+      this.scroll(p);
+    });
+  }
+  scroll(p: { sy: number; sx: number }) {
+    this.when(() => {
+      const d = this.doc;
+      if (!d) return;
+      d.querySelectorAll<HTMLElement>("[data-mscroll]").forEach((el) => {
+        const [t, l] = (el.getAttribute("data-mscroll") ?? "0,0")
+          .split(",")
+          .map(Number);
+        el.scrollTop = t || 0;
+        el.scrollLeft = l || 0;
+      });
+      d.defaultView?.scrollTo(p.sx || 0, p.sy || 0);
+    });
+  }
+}
+
 /** The app's own layout narrows pages; the studio screen covers the whole window instead. */
 export default function StagePage() {
   const [ready, setReady] = useState(false);
@@ -156,41 +302,212 @@ export default function StagePage() {
 }
 
 function Stage() {
-  const [key, setKey] = useState("");
+  const [test, setTest] = useState<boolean | null>(null);
+  const [channel, setChannel] = useState("");
+  const [locked, setLocked] = useState(false);
+  const [chanError, setChanError] = useState("");
   const [started, setStarted] = useState(false);
   const [link, setLink] = useState("connecting");
   const [snap, setSnap] = useState<Snap | null>(null);
   const [mode, setMode] = useState<Mode>("");
-  const [prompt, setPrompt] = useState<{ id: string; text: string } | null>(null);
+  const [prompt, setPrompt] = useState<{ id: string; text: string } | null>(
+    null,
+  );
+  const [finger, setFinger] = useState<Finger>(null);
+  const [hasScreen, setHasScreen] = useState(false);
   const [lastSeen, setLastSeen] = useState(0);
   const [now, setNow] = useState(0);
+  const [fit, setFit] = useState({ scale: 0.5, w: 1180, h: 820 });
+  const [orb, setOrb] = useState<{ mode: OrbMode } | null>(null);
   const player = useRef<Player | null>(null);
   const micLevel = useRef(0);
   const modeRef = useRef<Mode>("");
+  const screen = useRef<Screen | null>(null);
+  const area = useRef<HTMLDivElement>(null);
+  const frameRef = useRef<HTMLIFrameElement>(null);
+  const orbBox = useRef<HTMLDivElement>(null);
+  const fitRef = useRef(fit);
+  const lastAsk = useRef<{ merchant: string; amount: Amount | null }>({
+    merchant: "",
+    amount: null,
+  });
+  const fingerTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const findChannel = useCallback(() => {
+    setChanError("");
+    void stageChannelName().then((n) => {
+      if ("channel" in n) {
+        setLocked(false);
+        setChannel(n.channel);
+      } else if (n.locked) setLocked(true);
+      else setChanError(n.error);
+    });
+  }, []);
 
   useEffect(() => {
-    setKey(new URLSearchParams(window.location.search).get("k") || LIVE_KEY);
+    const t0 = new URLSearchParams(window.location.search).get("k") === "test";
+    setTest(t0);
+    if (!t0) findChannel();
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
+  }, [findChannel]);
+
+  // Fit the iPad's screen into the left two thirds, keeping its exact proportions.
+  const refit = useCallback(() => {
+    const box = area.current;
+    const s = screen.current;
+    if (!box) return;
+    const w = s?.w ?? 1180;
+    const h = s?.h ?? 820;
+    const pad = 28; // the iPad's bezel
+    const scale = Math.min(
+      (box.clientWidth - pad * 2) / w,
+      (box.clientHeight - pad * 2) / h,
+    );
+    fitRef.current = { scale: Math.max(0.1, scale), w, h };
+    setFit(fitRef.current);
+  }, []);
+  useEffect(() => {
+    if (!started || !area.current) return;
+    const ro = new ResizeObserver(refit);
+    ro.observe(area.current);
+    refit();
+    return () => ro.disconnect();
+  }, [started, refit]);
+
+  useEffect(() => {
+    if (!started || !frameRef.current) return;
+    screen.current = new Screen(frameRef.current, refit);
+  }, [started, refit]);
+
+  // The 3D orb is a canvas, which the HTML copy cannot carry: draw ours exactly where the iPad has its own.
+  useEffect(() => {
+    if (!started) return;
+    let raf = 0;
+    let lastMode = "";
+    const tick = () => {
+      raf = requestAnimationFrame(tick);
+      const d = screen.current?.doc;
+      const el = d?.querySelector<HTMLElement>(".glass-orb");
+      const box = orbBox.current;
+      const frame = frameRef.current;
+      if (!el || !box || !frame) {
+        if (lastMode) {
+          lastMode = "";
+          setOrb(null);
+        }
+        return;
+      }
+      const r = el.getBoundingClientRect();
+      if (r.width < 4) return;
+      const sc = fitRef.current.scale;
+      box.style.left = `${r.left * sc}px`;
+      box.style.top = `${r.top * sc}px`;
+      box.style.width = `${r.width * sc}px`;
+      box.style.height = `${r.height * sc}px`;
+      const m =
+        (["speaking", "listening", "connecting"] as OrbMode[]).find((x) =>
+          el.classList.contains(x),
+        ) ?? "idle";
+      if (m !== lastMode) {
+        lastMode = m;
+        setOrb({ mode: m });
+      }
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [started]);
+
+  const showFinger = useCallback((f: Finger) => {
+    if (fingerTimer.current) clearTimeout(fingerTimer.current);
+    setFinger(f);
+    if (f?.state === "ok")
+      fingerTimer.current = setTimeout(() => setFinger(null), 2200);
+    if (f?.state === "fail")
+      fingerTimer.current = setTimeout(() => setFinger(null), 3500);
   }, []);
 
   // Test pattern (/stage?k=test): a made-up run, clearly labelled, so the studio can check screen and sound.
   useEffect(() => {
-    if (key !== "test" || !started) return;
-    const usd = (v: string): Amount => ({ value: v, assetCode: "USD", assetScale: 2 });
-    const req = (status: string): Brief => ({ id: "test", merchantName: "Mama Chris", outgoing: false, status, amount: usd("100"), receive: usd("100") });
-    const lines: Snap["lines"] = [];
-    const base = { name: "Gloria", left: usd("2900"), limit: usd("3000"), every: "week" as const, last: null };
+    if (!test || !started) return;
+    const usd = (v: string): Amount => ({
+      value: v,
+      assetCode: "USD",
+      assetScale: 2,
+    });
+    const req = (status: string): Brief => ({
+      id: "test",
+      merchantName: "Mama Chris",
+      outgoing: false,
+      status,
+      amount: usd("100"),
+      receive: usd("100"),
+    });
+    const base = {
+      name: "Gloria",
+      left: usd("2900"),
+      limit: usd("3000"),
+      every: "week" as const,
+      last: null,
+      lines: [],
+    };
     const steps: [number, () => void][] = [
-      [0, () => setSnap({ ...base, pending: req("quoted"), lines: [] })],
-      [600, () => setMode("speaking")],
-      [700, () => player.current?.play(tone(), "pcm_16000")],
-      [800, () => setSnap({ ...base, pending: req("quoted"), lines: (lines.push({ who: "app", text: "Mama Chris is asking you for 1 dollar, about 1,354 naira. Do you want to pay?" }), [...lines]) })],
-      [3200, () => setMode("listening")],
-      [4500, () => setSnap({ ...base, pending: req("quoted"), lines: (lines.push({ who: "you", text: "Yes, pay her." }), [...lines]) })],
-      [5200, () => setPrompt({ id: "test", text: "To pay, rest your finger on the Home button. To refuse, do nothing." })],
-      [7500, () => setSnap({ ...base, pending: req("paying"), lines: [...lines] })],
-      [8600, () => (setSnap({ ...base, left: usd("2800"), pending: null, last: req("paid"), lines: [...lines] }), player.current?.ding())],
+      [0, () => setSnap({ ...base, pending: req("quoted") })],
+      [500, () => player.current?.play(tone(), "pcm_16000")],
+      [
+        2500,
+        () =>
+          showFinger({
+            state: "ask",
+            merchant: "Mama Chris",
+            amount: usd("100"),
+            at: Date.now(),
+          }),
+      ],
+      [
+        5000,
+        () =>
+          showFinger({
+            state: "fail",
+            merchant: "Mama Chris",
+            amount: usd("100"),
+            at: Date.now(),
+          }),
+      ],
+      [
+        8500,
+        () =>
+          showFinger({
+            state: "ask",
+            merchant: "Mama Chris",
+            amount: usd("100"),
+            at: Date.now(),
+          }),
+      ],
+      [
+        11000,
+        () => (
+          showFinger({
+            state: "ok",
+            merchant: "Mama Chris",
+            amount: usd("100"),
+            at: Date.now(),
+          }),
+          setSnap({ ...base, pending: req("paying") })
+        ),
+      ],
+      [
+        12500,
+        () => (
+          setSnap({
+            ...base,
+            left: usd("2800"),
+            pending: null,
+            last: req("paid"),
+          }),
+          player.current?.ding()
+        ),
+      ],
     ];
     setLastSeen(Date.now());
     const timers = steps.map(([ms, f]) => setTimeout(f, ms));
@@ -199,40 +516,89 @@ function Stage() {
       timers.forEach(clearTimeout);
       clearInterval(keep);
     };
-  }, [key, started]);
+  }, [test, started, showFinger]);
 
-  useEffect(() => {
-    if (!key || !started || key === "test") return;
-    return stageListen(
-      key,
-      (e: StageEvent, p) => {
-        setLastSeen(Date.now());
-        if (e === "audio") player.current?.play(String(p.b64 ?? ""), String(p.fmt ?? "pcm_16000"));
-        else if (e === "flush") player.current?.flush();
-        else if (e === "ding") player.current?.ding();
-        else if (e === "level") micLevel.current = Number(p.v) || 0;
-        else if (e === "mode") {
-          modeRef.current = (p.mode as Mode) ?? "";
-          setMode(modeRef.current);
-        } else if (e === "prompt") setPrompt({ id: String(p.id ?? ""), text: String(p.text ?? "") });
-        else if (e === "snap") {
-          const s = p as unknown as Snap & { mode?: Mode };
-          setSnap(s);
-          if (s.mode !== undefined && s.mode !== modeRef.current) {
-            modeRef.current = s.mode;
-            setMode(s.mode);
-          }
+  const onEvent = useCallback(
+    (e: StageEvent, p: Record<string, unknown>) => {
+      setLastSeen(Date.now());
+      if (e === "audio")
+        player.current?.play(String(p.b64 ?? ""), String(p.fmt ?? "pcm_16000"));
+      else if (e === "flush") player.current?.flush();
+      else if (e === "ding") player.current?.ding();
+      else if (e === "level") micLevel.current = Number(p.v) || 0;
+      else if (e === "head") screen.current?.setHead(p as unknown as HeadInfo);
+      else if (e === "dom") {
+        setHasScreen(true);
+        void screen.current
+          ?.setDom(
+            p as unknown as {
+              z: string;
+              w: number;
+              h: number;
+              sy: number;
+              sx: number;
+            },
+          )
+          .catch(() => {});
+      } else if (e === "scroll")
+        screen.current?.scroll(p as unknown as { sy: number; sx: number });
+      else if (e === "finger") {
+        const st = String(p.state ?? "");
+        if (st === "closed") showFinger(null);
+        else if (st === "ask" || st === "ok" || st === "fail") {
+          if (st === "ask")
+            lastAsk.current = {
+              merchant: String(p.merchant ?? ""),
+              amount: (p.amount as Amount) ?? null,
+            };
+          showFinger({ state: st, ...lastAsk.current, at: Date.now() });
         }
-      },
-      setLink,
-    );
-  }, [key, started]);
+      } else if (e === "mode") {
+        modeRef.current = (p.mode as Mode) ?? "";
+        setMode(modeRef.current);
+      } else if (e === "prompt")
+        setPrompt({ id: String(p.id ?? ""), text: String(p.text ?? "") });
+      else if (e === "snap") {
+        const s = p as unknown as Snap & { mode?: Mode };
+        setSnap(s);
+        if (s.mode !== undefined && s.mode !== modeRef.current) {
+          modeRef.current = s.mode;
+          setMode(s.mode);
+        }
+      }
+    },
+    [showFinger],
+  );
+  useEffect(() => {
+    if (!channel || !started || test) return;
+    return stageListen(channel, onEvent, setLink);
+  }, [channel, started, test, onEvent]);
+  // Development only: lets a local check feed events without the Realtime channel.
+  useEffect(() => {
+    if (process.env.NODE_ENV === "production" || !started) return;
+    (window as unknown as { __stageEvent?: typeof onEvent }).__stageEvent =
+      onEvent;
+  }, [started, onEvent]);
 
-  if (!key)
+  if (test === null) return null;
+
+  if (!test && locked)
     return (
       <main className="stg-center">
-        <h1>Studio link is missing its key</h1>
-        <p>Open the full link shown on the customer&apos;s Pay Alone in stage mode: /stage?k=…</p>
+        <MerchantKey what="The studio screen" onDone={findChannel} />
+        <style>{css}</style>
+      </main>
+    );
+
+  if (!test && !channel)
+    return (
+      <main className="stg-center">
+        <p>
+          {chanError
+            ? `Cannot reach Pay Alone (${chanError}).`
+            : "Opening the studio feed…"}
+        </p>
+        {chanError && <button onClick={findChannel}>Try again</button>}
         <style>{css}</style>
       </main>
     );
@@ -248,117 +614,311 @@ function Stage() {
           void document.documentElement.requestFullscreen?.().catch(() => {});
         }}
       >
-        <span className="stg-start-title">Pay Alone · studio feed</span>
-        <span>Click to start (this turns the sound on and goes full screen)</span>
+        <span className="stg-start-title">Pay Alone · studio screen</span>
+        <span>
+          Click to start (this turns the sound on and goes full screen)
+        </span>
         <style>{css}</style>
       </button>
     );
 
   const live = lastSeen > 0 && now - lastSeen < 6000;
   const req = snap?.pending ?? snap?.last ?? null;
-  const st = req ? (STATUS[req.status] ?? { text: req.status, tone: "wait" as const }) : null;
-  const fingerAsked = Boolean(req && snap?.pending && prompt?.id === req.id && /finger|Home button/i.test(prompt.text));
-  const showPrompt = req && snap?.pending && prompt?.id === req.id ? prompt.text : "";
+  const st = req
+    ? (STATUS[req.status] ?? { text: req.status, tone: "wait" as const })
+    : null;
+  const fingerAsked = Boolean(
+    req &&
+    snap?.pending &&
+    ((finger && finger.state === "ask") ||
+      (prompt?.id === req.id && /finger|Home button/i.test(prompt.text))),
+  );
   const name = snap?.name ?? "Customer";
-  const level = () => Math.min(1, (modeRef.current === "speaking" ? (player.current?.level() ?? 0) * 4 : modeRef.current === "listening" ? micLevel.current * 2.2 : 0));
+  const level = () =>
+    Math.min(
+      1,
+      modeRef.current === "speaking"
+        ? (player.current?.level() ?? 0) * 4
+        : modeRef.current === "listening"
+          ? micLevel.current * 2.2
+          : 0,
+    );
+  const devW = fit.w * fit.scale;
+  const devH = fit.h * fit.scale;
 
   return (
     <main className="stg">
       <header className="stg-top">
-        <span className="stg-brand">Pay Alone</span>
-        <span className={`stg-live ${live ? "on" : ""}`}>{key === "test" ? "TEST PATTERN · not live · made-up payment" : live ? "● LIVE from the iPad" : link === "SUBSCRIBED" ? "Waiting for the iPad…" : `Connecting (${link})…`}</span>
+        <span className="stg-brand">
+          <span className="stg-logo" aria-hidden="true">
+            <svg
+              viewBox="0 0 24 24"
+              width="20"
+              height="20"
+              fill="none"
+              stroke="#c3e88f"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M12 3l7 3v5c0 4.5-3 8.2-7 10-4-1.8-7-5.5-7-10V6l7-3z" />
+              <path d="M9 12l2 2 4-4" />
+            </svg>
+          </span>
+          Pay Alone
+        </span>
+        <span className={`stg-live ${test ? "test" : live ? "on" : ""}`}>
+          {test
+            ? "TEST PATTERN · not live · made-up payment"
+            : live
+              ? "● LIVE from the iPad"
+              : link === "SUBSCRIBED"
+                ? "Waiting for the iPad…"
+                : `Connecting (${link})…`}
+        </span>
       </header>
       <section className="stg-grid">
-        <div className="stg-pane">
-          <div className="stg-who">
-            <b>{name}</b>
-            <span>Blind customer · her Pay Alone on iPad</span>
+        <div className="stg-left">
+          <div className="stg-label">
+            <b>{name}</b> · her Pay Alone on iPad
           </div>
-          <div className="stg-orb">
-            <GlassOrb mode={mode || "idle"} level={mode ? level : undefined} size="min(22rem, 34vh)" />
-            <div className="stg-mode">{mode === "speaking" ? "Pay Alone is speaking" : mode === "listening" ? `Listening to ${name}` : mode === "connecting" ? "Connecting the voice…" : "Ready"}</div>
-          </div>
-          <ol className="stg-lines">
-            {(snap?.lines ?? []).slice(-4).map((l, i) => (
-              <li key={i} className={l.who}>
-                <small>{l.who === "you" ? name : "Pay Alone"}</small>
-                {l.text}
-              </li>
-            ))}
-          </ol>
-          {snap?.left && (
-            <div className="stg-cap">
-              Left to spend this {snap.every ?? "week"}: <b>{money(snap.left)}</b>
-              {snap.limit ? <span> of {formatAmount(snap.limit)}</span> : null}
-            </div>
-          )}
-        </div>
-        <div className="stg-pane right">
-          <div className="stg-who">
-            <b>{req?.merchantName ?? "Mama Chris"}</b>
-            <span>{req?.outgoing ? "Receiving from Pay Alone" : "Seller · asks for payment"}</span>
-          </div>
-          {req ? (
-            <div className={`stg-req ${st?.tone}`}>
-              <div className="stg-req-what">{req.outgoing ? `${name} sends` : `Asked ${name} for`}</div>
-              <div className="stg-req-amt">{formatAmount(req.amount)}</div>
-              {nairaOf(req.amount) && <div className="stg-req-ngn">≈ ₦{nairaOf(req.amount)}</div>}
-              <div className="stg-req-status">
-                {req.status === "paid" ? "✓ " : ""}
-                {fingerAsked && req.status !== "paid" ? "Fingerprint requested on the iPad" : st?.text}
+          <div className="stg-area" ref={area}>
+            <div
+              className="stg-ipad"
+              style={{ width: devW + 28, height: devH + 28 }}
+            >
+              <div className="stg-glass" style={{ width: devW, height: devH }}>
+                <iframe
+                  ref={frameRef}
+                  title="Live copy of the customer's screen"
+                  sandbox="allow-same-origin"
+                  srcDoc={
+                    '<!doctype html><html><head><meta charset="utf-8"></head><body></body></html>'
+                  }
+                  style={{
+                    width: fit.w,
+                    height: fit.h,
+                    transform: `scale(${fit.scale})`,
+                  }}
+                />
+                <div
+                  ref={orbBox}
+                  className="stg-orb-over"
+                  style={{ display: orb ? "block" : "none" }}
+                >
+                  {orb && (
+                    <GlassOrb
+                      mode={orb.mode}
+                      level={orb.mode !== "idle" ? level : undefined}
+                      size="100%"
+                    />
+                  )}
+                </div>
+                {!hasScreen && (
+                  <div className="stg-wait">
+                    {test ? (
+                      <>
+                        <b>Test pattern</b>
+                        <span>
+                          The iPad&apos;s screen appears here when it is live.
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <b>Waiting for the iPad&apos;s screen</b>
+                        <span>
+                          On the iPad, open Pay Alone in stage mode
+                          (payalone.vercel.app/wallet?stage=1).
+                        </span>
+                      </>
+                    )}
+                  </div>
+                )}
+                {finger && <FingerSheet f={finger} />}
               </div>
-              {req.status === "paid" && req.receive && <div className="stg-req-sub">{money(req.receive)} received over Interledger</div>}
-              {showPrompt && req.status !== "paid" && <div className="stg-req-sub">On the iPad: “{showPrompt}”</div>}
             </div>
-          ) : (
-            <div className="stg-req wait">
-              <div className="stg-req-what">No payment yet</div>
-              <div className="stg-req-sub">A request appears here the moment it is sent.</div>
-            </div>
-          )}
+          </div>
         </div>
+        <aside className="stg-right">
+          <div className="stg-label">
+            <b>{req?.merchantName ?? "Mama Chris"}</b> ·{" "}
+            {req?.outgoing ? "receiving" : "the seller"}
+          </div>
+          <div className={`stg-card ${st?.tone ?? "wait"}`}>
+            {req ? (
+              <>
+                <div className="stg-card-what">
+                  {req.outgoing ? `${name} sends` : `Asked ${name} for`}
+                </div>
+                <div className="stg-card-amt">
+                  <sup>$</sup>
+                  {formatAmount(req.amount).replace(/^[A-Z]{3}\s?/, "")}
+                </div>
+                {nairaOf(req.amount) && (
+                  <div className="stg-card-ngn">≈ ₦{nairaOf(req.amount)}</div>
+                )}
+                <div className={`stg-pill ${st?.tone}`}>
+                  {req.status === "paid" ? "✓ " : ""}
+                  {fingerAsked && req.status !== "paid"
+                    ? `Waiting for ${name}'s fingerprint`
+                    : st?.text}
+                </div>
+                {req.status === "paid" && req.receive && (
+                  <div className="stg-card-sub">
+                    {money(req.receive)} received over Interledger
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                <div className="stg-card-what">No payment yet</div>
+                <div className="stg-card-sub">
+                  A request appears here the moment it is sent.
+                </div>
+              </>
+            )}
+          </div>
+          <div className="stg-mode">
+            <span className={`stg-dot ${mode}`} />
+            {mode === "speaking"
+              ? "Pay Alone is speaking"
+              : mode === "listening"
+                ? `Listening to ${name}`
+                : mode === "connecting"
+                  ? "Connecting the voice…"
+                  : "Voice ready"}
+          </div>
+          <p className="stg-foot">
+            Interledger Open Payments · test network · money moves in US
+            dollars; naira shown at the CBN rate of 16 Nov (₦1,353.97 per $1)
+          </p>
+        </aside>
       </section>
-      <footer className="stg-foot">Interledger Open Payments · test network · money moves in US dollars; naira shown at the CBN rate of 16 Nov (₦1,353.97 per $1)</footer>
       <style>{css}</style>
     </main>
   );
 }
 
+/** A copy of the iPad's Touch ID sheet: asking, approved (green tick) or not recognised (red shake). */
+function FingerSheet({ f }: { f: NonNullable<Finger> }) {
+  const amt = f.amount ? formatAmount(f.amount) : "";
+  return (
+    <div className="fp-dim" key={`${f.state}-${f.at}`}>
+      <div
+        className={`fp-sheet ${f.state}`}
+        role="status"
+        aria-live="assertive"
+      >
+        <div className="fp-icon">
+          {f.state === "ok" ? (
+            <svg viewBox="0 0 64 64" aria-hidden="true">
+              <circle className="fp-ring" cx="32" cy="32" r="27" />
+              <path className="fp-tick" d="M19 33l9 9 17-19" />
+            </svg>
+          ) : (
+            <svg viewBox="0 0 64 64" aria-hidden="true" className="fp-print">
+              <path d="M14 26c3-9 10-14 18-14 9 0 16 5 19 13" />
+              <path d="M18 50c-3-5-4-10-4-16 0-10 8-18 18-18s18 8 18 18" />
+              <path d="M24 55c-3-6-5-12-5-19 0-7 6-13 13-13s13 6 13 13c0 5-1 10-3 14" />
+              <path d="M30 57c-3-7-5-13-5-20 0-4 3-7 7-7s7 3 7 7c0 6 1 11 4 16" />
+              <path d="M32 37c0 8 2 14 7 20" />
+              {f.state === "ask" && (
+                <rect
+                  className="fp-scan"
+                  x="10"
+                  y="10"
+                  width="44"
+                  height="3"
+                  rx="1.5"
+                />
+              )}
+            </svg>
+          )}
+        </div>
+        <b className="fp-title">
+          {f.state === "ok"
+            ? "Approved"
+            : f.state === "fail"
+              ? "Not recognised"
+              : "Touch ID for “Pay Alone”"}
+        </b>
+        <span className="fp-sub">
+          {f.state === "fail"
+            ? "This fingerprint is not Gloria's. Nothing was paid."
+            : `Pay ${amt}${f.merchant ? ` to ${f.merchant}` : ""}`}
+        </span>
+        {f.state === "ask" && <span className="fp-cancel">Cancel</span>}
+      </div>
+    </div>
+  );
+}
+
 const css = `
-body { margin: 0; background: #071a15; }
-.stg, .stg-center, .stg-start { min-height: 100vh; background: radial-gradient(circle at 25% 20%, #0f3b31, #071a15 60%); color: #eafff7; font-family: var(--font-sans, system-ui), sans-serif; }
-.stg-center { display: grid; place-content: center; text-align: center; padding: 2rem; }
+body { margin: 0; background: #eaf2e5; }
+.stg, .stg-center, .stg-start { position: fixed; inset: 0; z-index: 1000; max-width: none; margin: 0; background: #eaf2e5; color: #0c2a21; font-family: var(--font-sans, system-ui), sans-serif; }
+.stg-center { display: grid; place-content: center; justify-items: center; gap: 1rem; padding: 2rem; }
 .stg-start { width: 100%; border: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1rem; font-size: 1.4rem; cursor: pointer; }
-.stg-start-title { font-size: 3rem; font-weight: 800; color: #d9f7a0; }
-.stg { position: fixed; inset: 0; z-index: 1000; max-width: none; margin: 0; width: auto; display: flex; flex-direction: column; padding: 1.5rem 2.5rem; box-sizing: border-box; overflow: hidden; }
-.stg-start, .stg-center { position: fixed; inset: 0; z-index: 1000; max-width: none; margin: 0; }
+.stg-start-title { font-size: 3rem; font-weight: 700; color: #0f3b30; letter-spacing: -0.02em; }
+.stg { display: flex; flex-direction: column; padding: 1.1rem 1.6rem 1.2rem; box-sizing: border-box; overflow: hidden; }
 .stg-top { display: flex; justify-content: space-between; align-items: center; }
-.stg-brand { font-weight: 800; font-size: 1.8rem; color: #d9f7a0; }
-.stg-live { font-weight: 700; font-size: 1.1rem; color: #9fb8af; }
-.stg-live.on { color: #ff5a5a; }
-.stg-grid { flex: 1; display: grid; grid-template-columns: 1.25fr 1fr; gap: 2rem; margin-top: 1rem; min-height: 0; }
-.stg-pane { background: #0d2c25cc; border: 1px solid #2a5a4d; border-radius: 28px; padding: 1.5rem 2rem; display: flex; flex-direction: column; gap: 1rem; min-height: 0; }
-.stg-pane.right { justify-content: flex-start; background: #f4fbf3; color: #0b2a22; border-color: #cfe7d8; }
-.stg-who b { display: block; font-size: 2.1rem; }
-.stg-who span { opacity: .75; font-size: 1.1rem; }
-.stg-orb { display: flex; flex-direction: column; align-items: center; gap: .5rem; }
-.stg-mode { font-size: 1.3rem; font-weight: 700; color: #8ef0d2; }
-.stg-lines { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .5rem; overflow: hidden; flex: 1; justify-content: flex-end; }
-.stg-lines li { padding: .6rem 1rem; border-radius: 18px; font-size: 1.35rem; line-height: 1.35; max-width: 92%; }
-.stg-lines li small { display: block; font-size: .8rem; opacity: .7; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
-.stg-lines li.app { background: #134a3d; align-self: flex-start; }
-.stg-lines li.you { background: #d9f7a0; color: #0b2a22; align-self: flex-end; }
-.stg-cap { font-size: 1.2rem; opacity: .9; }
-.stg-req { border-radius: 24px; padding: 2rem; background: #fff; border: 3px solid #cfe7d8; display: flex; flex-direction: column; gap: .5rem; }
-.stg-req.go { border-color: #2a8fe0; }
-.stg-req.good { border-color: #11a88f; background: #e6fff6; }
-.stg-req.bad { border-color: #e05a4a; background: #fff1ef; }
-.stg-req-what { font-size: 1.3rem; opacity: .75; }
-.stg-req-amt { font-size: clamp(2.5rem, 5vw, 5rem); font-weight: 800; line-height: 1; white-space: nowrap; }
-.stg-req-ngn { font-size: 1.8rem; font-weight: 700; color: #0b6b55; }
-.stg-req-status { font-size: 2rem; font-weight: 800; margin-top: 1rem; }
-.stg-req.good .stg-req-status { color: #0b8a6f; font-size: 3rem; }
-.stg-req-sub { font-size: 1.15rem; opacity: .8; }
-.stg-foot { font-size: .95rem; opacity: .6; margin-top: 1rem; }
+.stg-brand { display: inline-flex; align-items: center; gap: .6rem; font-weight: 700; font-size: 1.5rem; color: #0f3b30; }
+.stg-logo { display: grid; place-items: center; width: 2.3rem; height: 2.3rem; border-radius: .7rem; background: #0f3b30; }
+.stg-live { font-weight: 600; font-size: 1rem; padding: .45rem 1rem; border-radius: 999px; background: #fff; color: #4b5f57; }
+.stg-live.on { background: #0f3b30; color: #fff; }
+.stg-live.on::first-letter { color: #ff5a5a; }
+.stg-live.test { background: #fde7c8; color: #7a4a00; }
+.stg-grid { flex: 1; display: grid; grid-template-columns: 2fr 1fr; gap: 1.6rem; margin-top: .9rem; min-height: 0; }
+.stg-left, .stg-right { display: flex; flex-direction: column; gap: .6rem; min-height: 0; }
+.stg-label { font-size: 1.05rem; color: #4b5f57; }
+.stg-label b { color: #0f3b30; font-size: 1.25rem; }
+.stg-area { flex: 1; min-height: 0; display: grid; place-items: center; }
+.stg-ipad { box-sizing: border-box; padding: 14px; border-radius: 34px; background: #16201d; box-shadow: 0 30px 70px rgba(15, 59, 48, .25), inset 0 0 0 2px #2c3a36; }
+.stg-glass { position: relative; overflow: hidden; border-radius: 20px; background: #f4f8f1; }
+.stg-glass iframe { position: absolute; left: 0; top: 0; border: 0; transform-origin: 0 0; background: #f4f8f1; }
+.stg-orb-over { position: absolute; pointer-events: none; }
+.stg-wait { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; gap: .5rem; color: #4b5f57; padding: 2rem; }
+.stg-wait b { font-size: 1.6rem; color: #0f3b30; }
+.stg-card { border-radius: 1.6rem; background: #fff; padding: 1.6rem 1.6rem 1.8rem; display: grid; gap: .45rem; box-shadow: 0 14px 34px rgba(15, 59, 48, .08); }
+.stg-card.good { background: #0f3b30; color: #fff; }
+.stg-card-what { font-size: 1.1rem; opacity: .7; }
+.stg-card-amt { font-size: clamp(2.6rem, 4.2vw, 4.4rem); font-weight: 500; letter-spacing: -.03em; line-height: 1; }
+.stg-card-amt sup { font-size: .4em; opacity: .7; vertical-align: top; position: relative; top: .3em; margin-right: .1em; }
+.stg-card-ngn { font-size: 1.3rem; font-weight: 500; opacity: .75; }
+.stg-pill { width: fit-content; margin-top: .8rem; padding: .5rem 1rem; border-radius: 999px; font-weight: 700; font-size: 1.15rem; background: #eef3ea; color: #0f3b30; }
+.stg-pill.go { background: #e4eefc; color: #1d4f91; }
+.stg-pill.good { background: #c3e88f; color: #0f3b30; font-size: 1.5rem; }
+.stg-pill.bad { background: #fde3df; color: #a2271b; }
+.stg-card-sub { font-size: 1rem; opacity: .75; }
+.stg-mode { display: flex; align-items: center; gap: .6rem; padding: .9rem 1.2rem; border-radius: 1.2rem; background: #fff; font-weight: 600; color: #0f3b30; }
+.stg-dot { width: .8rem; height: .8rem; border-radius: 50%; background: #b9c7bf; }
+.stg-dot.speaking { background: #2a8fe0; animation: stg-pulse 1s ease-in-out infinite; }
+.stg-dot.listening { background: #11a88f; animation: stg-pulse 1s ease-in-out infinite; }
+@keyframes stg-pulse { 50% { transform: scale(1.5); opacity: .6; } }
+.stg-foot { margin: auto 0 0; font-size: .85rem; color: #6b7d75; }
+
+.fp-dim { position: absolute; inset: 0; z-index: 5; display: grid; place-items: center; background: rgba(0, 0, 0, .28); animation: fp-fade .2s ease-out; }
+.fp-sheet { width: clamp(15rem, 34%, 20rem); padding: 1.6rem 1.4rem 1.2rem; border-radius: 1.2rem; background: rgba(250, 250, 250, .96); box-shadow: 0 20px 50px rgba(0, 0, 0, .3); display: grid; justify-items: center; gap: .45rem; text-align: center; color: #111; animation: fp-pop .28s cubic-bezier(.2, 1.4, .4, 1); font-family: -apple-system, system-ui, sans-serif; }
+.fp-icon svg { width: 4.6rem; height: 4.6rem; overflow: visible; }
+.fp-print path { fill: none; stroke: #ff375f; stroke-width: 3; stroke-linecap: round; }
+.fp-scan { fill: #ff375f; opacity: .55; animation: fp-scan 1.6s ease-in-out infinite; }
+.fp-sheet.ask .fp-print { animation: fp-breathe 1.6s ease-in-out infinite; }
+.fp-title { font-size: 1.15rem; font-weight: 600; }
+.fp-sub { font-size: .95rem; color: #555; }
+.fp-cancel { margin-top: .6rem; padding-top: .7rem; width: 100%; border-top: 1px solid #ddd; color: #0a7aff; font-size: 1.05rem; }
+.fp-sheet.ok .fp-title { color: #0b8a4f; font-size: 1.4rem; }
+.fp-ring { fill: #34c759; stroke: #34c759; stroke-width: 3; transform-origin: 32px 32px; animation: fp-ring .35s ease-out both; }
+.fp-tick { fill: none; stroke: #fff; stroke-width: 5.5; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 48; stroke-dashoffset: 48; animation: fp-draw .4s .25s ease-out forwards; }
+.fp-sheet.ok { animation: fp-pop .28s cubic-bezier(.2, 1.4, .4, 1), fp-glow 1.2s .3s ease-out; }
+.fp-sheet.fail { animation: fp-shake .5s cubic-bezier(.36, .07, .19, .97) both; }
+.fp-sheet.fail .fp-print path { stroke: #d70015; }
+.fp-sheet.fail .fp-title { color: #d70015; font-size: 1.35rem; }
+@keyframes fp-fade { from { opacity: 0; } }
+@keyframes fp-pop { from { transform: scale(1.12); opacity: 0; } }
+@keyframes fp-scan { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(42px); } }
+@keyframes fp-breathe { 50% { transform: scale(1.05); } }
+@keyframes fp-ring { from { transform: scale(.3); opacity: 0; } }
+@keyframes fp-draw { to { stroke-dashoffset: 0; } }
+@keyframes fp-glow { 0% { box-shadow: 0 0 0 0 rgba(52, 199, 89, .6), 0 20px 50px rgba(0,0,0,.3); } 100% { box-shadow: 0 0 0 28px rgba(52, 199, 89, 0), 0 20px 50px rgba(0,0,0,.3); } }
+@keyframes fp-shake { 10%, 90% { transform: translateX(-2px); } 20%, 80% { transform: translateX(4px); } 30%, 50%, 70% { transform: translateX(-9px); } 40%, 60% { transform: translateX(9px); } }
 @media (max-width: 900px) { .stg { overflow: auto; } .stg-grid { grid-template-columns: 1fr; } }
 `;

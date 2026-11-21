@@ -20,6 +20,7 @@
     "@simplewebauthn/server": "^14.1.0",
     "@supabase/supabase-js": "2.118.0",
     "jsqr": "^1.4.0",
+    "morphdom": "^2.7.4",
     "next": "16.4.6",
     "pg": "^8.23.1",
     "qrcode": "^1.5.4",
