@@ -144,6 +144,8 @@ interface CustomerView {
   assetScale: number;
   cap: CapView | null;
   fingerprint: { kind: "passkey" | "device"; id: string; transports?: string[]; createdAt: string }[];
+  /** Worked out by Pay Alone: a figure read from the wallet, minus payments made through Pay Alone since. */
+  balance?: { amount: Amount; asOf: string; source: string; paidSince: Amount; count: number } | null;
 }
 
 interface RequestView {
@@ -1813,6 +1815,21 @@ function Home(props: {
             </div>
           </div>
 
+          {customer.balance && (
+            <div className="card chart-card" aria-label="Account balance">
+              <div className="card-top">
+                <span className="chip-coin" aria-hidden="true">
+                  {symbolOf(customer.balance.amount.assetCode)}
+                </span>
+                <b>Account balance</b>
+              </div>
+              <Money a={customer.balance.amount} size="lg" />
+              <button className="pill ghost" onClick={() => say(`Your balance is about ${speakAmount(customer.balance!.amount)}.`)}>
+                <Icon name="speaker" size={20} /> Say it aloud
+              </button>
+            </div>
+          )}
+
           <div className="card chart-card">
             <div className="card-top">
               <span className="chip-coin" aria-hidden="true">
@@ -2221,15 +2238,28 @@ function Meter({ spent, limit }: { spent: Amount; limit: Amount }) {
 type GrowView = {
   saved: Amount | null;
   holdings: { symbol: string; name: string; shares: string; cost: Amount; value: Amount | null }[];
-  market: { symbol: string; name: string; about: string; market: "NGX" | "US"; currency: "NGN" | "USD"; priceMinor: string; changeMonthBp: number | null; asOf: string; source: string }[];
+  market: { symbol: string; name: string; about: string; market: "NGX" | "US"; currency: "NGN" | "USD"; priceMinor: string; changeMonthBp: number | null; changeSixMonthBp?: number | null; asOf: string; source: string }[];
   savingsReady: boolean;
   investReady: boolean;
 };
 const priceOf = (q: GrowView["market"][number]) => (Number(q.priceMinor) / 100).toLocaleString("en-US", { maximumFractionDigits: 2 });
 const changeOf = (q: GrowView["market"][number]) =>
   q.changeMonthBp === null ? "" : `${q.changeMonthBp >= 0 ? "up" : "down"} ${Math.abs(q.changeMonthBp / 100).toFixed(1)} percent this month`;
+const sixOf = (q: GrowView["market"][number]) =>
+  q.changeSixMonthBp == null ? "" : `${q.changeSixMonthBp >= 0 ? "up" : "down"} ${Math.abs(q.changeSixMonthBp / 100).toFixed(1)} percent over six months`;
+/** Ranked by the last six months (facts about the past), then each share with both changes. */
 function marketLine(m: GrowView["market"]) {
-  return m.map((q) => `${q.name} (${q.about}): ${priceOf(q)} ${q.currency === "NGN" ? "naira" : "dollars"} a share${changeOf(q) ? ", " + changeOf(q) : ""}`).join("; ");
+  const ranked = m.filter((q) => q.changeSixMonthBp != null).sort((a, b) => b.changeSixMonthBp! - a.changeSixMonthBp!);
+  const rank = ranked.length ? `Ranked by the last six months: ${ranked.map((q, i) => `${i + 1}. ${q.name} ${sixOf(q)}`).join("; ")}. Each share: ` : "";
+  return (
+    rank +
+    m
+      .map((q) => {
+        const ch = [changeOf(q), sixOf(q)].filter(Boolean).join(", ");
+        return `${q.name} (${q.about}): ${priceOf(q)} ${q.currency === "NGN" ? "naira" : "dollars"} a share${ch ? ", " + ch : ""}`;
+      })
+      .join("; ")
+  );
 }
 function growLine(g: GrowView) {
   const s = g.saved ? `Saved so far: ${speakAmount(g.saved)}.` : "Nothing saved yet.";

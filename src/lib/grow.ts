@@ -29,6 +29,7 @@ export type MarketQuote = {
   currency: "NGN" | "USD";
   priceMinor: string; // kobo or cents
   changeMonthBp: number | null; // change over about one month, in hundredths of a percent
+  changeSixMonthBp: number | null; // change over about six months, in hundredths of a percent
   asOf: string;
   source: string;
 };
@@ -39,18 +40,21 @@ const toMinor = (n: number) => String(Math.round(n * 100));
 
 async function fetchUs(w: Watch): Promise<MarketQuote | null> {
   try {
-    const res = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${w.symbol}?range=1mo&interval=1d`, { headers: UA, cache: "no-store" });
+    const res = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${w.symbol}?range=6mo&interval=1d`, { headers: UA, cache: "no-store" });
     if (!res.ok) return null;
     const r = (await res.json())?.chart?.result?.[0];
     const price = Number(r?.meta?.regularMarketPrice);
     const closes: number[] = (r?.indicators?.quote?.[0]?.close ?? []).filter((x: unknown) => typeof x === "number");
     if (!Number.isFinite(price) || price <= 0) return null;
-    const first = closes[0];
+    const first = closes[0]; // about six months ago
+    const monthAgo = closes.length > 22 ? closes[closes.length - 22] : undefined; // about 21 trading days
+    const pct = (from?: number) => (from ? Math.round(((price - from) / from) * 10000) : null);
     return {
       ...w,
       currency: "USD",
       priceMinor: toMinor(price),
-      changeMonthBp: first ? Math.round(((price - first) / first) * 10000) : null,
+      changeMonthBp: pct(monthAgo),
+      changeSixMonthBp: pct(first),
       asOf: new Date((Number(r?.meta?.regularMarketTime) || Date.now() / 1000) * 1000).toISOString(),
       source: "Yahoo Finance, delayed",
     };
@@ -69,15 +73,15 @@ async function fetchNgx(list: Watch[]): Promise<MarketQuote[]> {
       fetch("https://scanner.tradingview.com/nigeria/scan", {
         method: "POST",
         headers: { ...UA, "Content-Type": "application/json" },
-        body: JSON.stringify({ symbols: { tickers: list.map((w) => `NSENG:${w.symbol}`) }, columns: ["name", "close", "Perf.1M"] }),
+        body: JSON.stringify({ symbols: { tickers: list.map((w) => `NSENG:${w.symbol}`) }, columns: ["name", "close", "Perf.1M", "Perf.6M"] }),
         cache: "no-store",
       })
         .then((r) => (r.ok ? r.json() : { data: [] }))
         .catch(() => ({ data: [] })),
     ]);
     const rows = Array.isArray(ngx) ? (ngx as { Symbol: string; ClosePrice: number; TradeDate: string }[]) : [];
-    const perf = new Map<string, { close: number; m: number | null }>();
-    for (const x of (tv?.data ?? []) as { d: [string, number, number | null] }[]) perf.set(String(x.d[0]), { close: Number(x.d[1]), m: x.d[2] });
+    const perf = new Map<string, { close: number; m: number | null; h: number | null }>();
+    for (const x of (tv?.data ?? []) as { d: [string, number, number | null, number | null] }[]) perf.set(String(x.d[0]), { close: Number(x.d[1]), m: x.d[2], h: x.d[3] });
     const out: MarketQuote[] = [];
     for (const w of list) {
       const row = rows.find((r) => String(r.Symbol).trim() === w.symbol);
@@ -89,6 +93,7 @@ async function fetchNgx(list: Watch[]): Promise<MarketQuote[]> {
         currency: "NGN",
         priceMinor: toMinor(price),
         changeMonthBp: typeof p?.m === "number" ? Math.round(p.m * 100) : null,
+        changeSixMonthBp: typeof p?.h === "number" ? Math.round(p.h * 100) : null,
         asOf: row?.TradeDate ? new Date(row.TradeDate).toISOString() : new Date().toISOString(),
         source: row ? "Nigerian Exchange (NGX) daily price" : "TradingView (NGX), delayed",
       });
@@ -199,13 +204,21 @@ export function growText(g: Awaited<ReturnType<typeof growSummary>>): string {
   return parts.join(" ");
 }
 
+const moved = (bp: number | null, over: string) => (bp === null ? "" : `${bp >= 0 ? "up" : "down"} ${Math.abs(bp / 100).toFixed(1)} percent over the last ${over}`);
+
+/** Ranked by the last six months (facts about the past), then each share's price and both changes. */
 export function marketText(quotes: MarketQuote[]): string {
-  return quotes
+  const ranked = quotes.filter((q) => q.changeSixMonthBp !== null).sort((a, b) => b.changeSixMonthBp! - a.changeSixMonthBp!);
+  const rank = ranked.length
+    ? `Ranked by how much they moved over the last six months: ${ranked.map((q, i) => `${i + 1}. ${q.name}, ${moved(q.changeSixMonthBp, "six months")}`).join("; ")}. `
+    : "";
+  const each = quotes
     .map((q) => {
       const p = (Number(q.priceMinor) / 100).toLocaleString("en-US", { maximumFractionDigits: 2 });
       const unit = q.currency === "NGN" ? "naira" : "dollars";
-      const m = q.changeMonthBp === null ? "" : `, ${q.changeMonthBp >= 0 ? "up" : "down"} ${Math.abs(q.changeMonthBp / 100).toFixed(1)} percent over the last month`;
-      return `${q.name} (${q.about}, ${q.market === "NGX" ? "Nigerian Exchange" : "US market"}): ${p} ${unit} a share${m}`;
+      const ch = [moved(q.changeMonthBp, "month"), moved(q.changeSixMonthBp, "six months")].filter(Boolean).join(", ");
+      return `${q.name} (${q.about}, ${q.market === "NGX" ? "Nigerian Exchange" : "US market"}): ${p} ${unit} a share${ch ? ", " + ch : ""}`;
     })
     .join(". ");
+  return `${rank}${each}. Past moves do not promise the future.`;
 }

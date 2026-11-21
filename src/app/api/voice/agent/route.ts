@@ -1,4 +1,4 @@
-import { capSummary, customerHistory, getRequestFor, isOpen, payeesOf } from "@/lib/domain";
+import { balanceEstimate, capSummary, customerHistory, getRequestFor, isOpen, payeesOf } from "@/lib/domain";
 import { fail, requireCustomer } from "@/lib/http";
 import { exceedsCap, remainingOfCap, speakAmount } from "@/lib/money";
 import { growSummary, growText } from "@/lib/grow";
@@ -105,6 +105,11 @@ export async function GET(req: Request) {
       }
     }
 
+    const bal = await balanceEstimate(customer);
+    const balanceText = bal
+      ? `about ${speakAmount(bal.amount)}. Pay Alone works this out: the wallet showed ${speakAmount({ ...bal.amount, value: (BigInt(bal.amount.value) + BigInt(bal.paidSince.value)).toString() })} on ${when(bal.asOf)}, and ${bal.count} payment${bal.count === 1 ? "" : "s"} made through Pay Alone since then took ${speakAmount(bal.paidSince)}. Money received or paid outside Pay Alone is not counted.`
+      : "not known: the wallet does not let apps read the balance, and no figure from the wallet has been noted yet";
+
     return Response.json(
       {
         token,
@@ -126,6 +131,7 @@ export async function GET(req: Request) {
           pending_text: pending,
           approve_how: approveHow,
           grow_text: grow,
+          balance_text: balanceText,
         },
       },
       { headers: { "cache-control": "no-store" } },

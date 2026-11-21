@@ -67,6 +67,11 @@ export interface Customer {
   deviceKeyChallenge?: { challenge: string; expiresAt: string };
   /** More devices (or the Home Screen app) linked with a one-time link code. Hashes only. */
   otherDeviceHashes?: string[];
+  /**
+   * The account balance as the customer read it from their wallet at one moment. Open Payments has no
+   * balance to read, so Pay Alone works the balance out from this: the figure minus payments it made since.
+   */
+  balanceNote?: { amount: Amount; at: string; source: string };
 }
 
 function hasFingerprint(c: Customer): boolean {
@@ -779,6 +784,27 @@ async function pay(customer: Customer, r: PaymentRequest, accessToken: string): 
 // ---------- history (payments made through this app only) ----------
 
 const HISTORY_LIMIT = 20;
+
+/**
+ * The balance Pay Alone works out: the figure the customer read from their wallet, minus every payment
+ * Pay Alone made after that moment. Payments made elsewhere and money received are not seen.
+ */
+export async function balanceEstimate(customer: Customer): Promise<{ amount: Amount; asOf: string; source: string; paidSince: Amount; count: number } | null> {
+  const note = customer.balanceNote;
+  if (!note) return null;
+  const paid = (await store().list<PaymentRequest>("requests")).filter(
+    (r) => r.customerId === customer.id && r.status === "paid" && r.paid && r.paid.at > note.at && r.paid.debitAmount.assetCode === note.amount.assetCode,
+  );
+  let spent = BigInt(0);
+  for (const r of paid) spent += BigInt(r.paid!.debitAmount.value);
+  return {
+    amount: { ...note.amount, value: (BigInt(note.amount.value) - spent).toString() },
+    asOf: note.at,
+    source: note.source,
+    paidSince: { ...note.amount, value: spent.toString() },
+    count: paid.length,
+  };
+}
 
 export async function customerHistory(customer: Customer) {
   const mine = (await store().list<PaymentRequest>("requests"))

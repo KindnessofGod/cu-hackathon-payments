@@ -1,4 +1,4 @@
-import { customerHistory, latestFinished, pendingRequest, publicCustomer, publicRequest } from "@/lib/domain";
+import { balanceEstimate, customerHistory, latestFinished, pendingRequest, publicCustomer, publicRequest } from "@/lib/domain";
 import { currentCustomer, fail, ok } from "@/lib/http";
 import { isSimulated } from "@/lib/op";
 import { MOCK_HOST } from "@/lib/op/mock";
@@ -14,7 +14,7 @@ export async function GET() {
     const last = await latestFinished(customer);
     return ok({
       simulated,
-      customer: publicCustomer(customer),
+      customer: { ...publicCustomer(customer), balance: await balanceEstimate(customer) },
       pending: pending && (pending.status === "quoted" || pending.status === "waiting") ? publicRequest(pending, customer) : null,
       history: await customerHistory(customer),
       last: pending && pending.status === "failed" ? publicRequest(pending, customer) : last ? publicRequest(last, customer) : null,
