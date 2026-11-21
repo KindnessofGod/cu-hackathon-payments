@@ -1793,8 +1793,20 @@ function Home(props: {
                 <span className="coin" aria-hidden="true">
                   {symbolOf(customer.assetCode)}
                 </span>
-                {active ? <Money a={active.left} size="xl" /> : <span className="money xl">No limit</span>}
-                <span className="frame-label">{active ? `Left to spend this ${active.every}, of ${formatAmount(active.limit)}` : "Set a spending limit below"}</span>
+                {customer.balance ? (
+                  <>
+                    <span className="frame-label">Account balance</span>
+                    <Money a={customer.balance.amount} size="xl" />
+                    <span className="frame-label">
+                      {active ? `Left to spend this ${active.every}: ${formatAmount(active.left)} of ${formatAmount(active.limit)}` : "No spending limit set"}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    {active ? <Money a={active.left} size="xl" /> : <span className="money xl">No limit</span>}
+                    <span className="frame-label">{active ? `Left to spend this ${active.every}, of ${formatAmount(active.limit)}` : "Set a spending limit below"}</span>
+                  </>
+                )}
                 {active && (
                   <span className="frame-bar" aria-hidden="true">
                     <span style={{ width: `${leftPct}%` }} />
@@ -1804,7 +1816,11 @@ function Home(props: {
               <div className="pill-row">
                 <button
                   className="pill ghost"
-                  onClick={() => say(active ? `${speakAmount(active.left)} is left to spend this ${active.every}.` : "You have no spending limit set.")}
+                  onClick={() =>
+                    say(
+                      `${customer.balance ? `Your balance is about ${speakAmount(customer.balance.amount)}. ` : ""}${active ? `${speakAmount(active.left)} is left to spend this ${active.every}.` : "You have no spending limit set."}`,
+                    )
+                  }
                 >
                   <Icon name="speaker" size={20} /> Say it aloud
                 </button>
@@ -1814,21 +1830,6 @@ function Home(props: {
               </div>
             </div>
           </div>
-
-          {customer.balance && (
-            <div className="card chart-card" aria-label="Account balance">
-              <div className="card-top">
-                <span className="chip-coin" aria-hidden="true">
-                  {symbolOf(customer.balance.amount.assetCode)}
-                </span>
-                <b>Account balance</b>
-              </div>
-              <Money a={customer.balance.amount} size="lg" />
-              <button className="pill ghost" onClick={() => say(`Your balance is about ${speakAmount(customer.balance!.amount)}.`)}>
-                <Icon name="speaker" size={20} /> Say it aloud
-              </button>
-            </div>
-          )}
 
           <div className="card chart-card">
             <div className="card-top">
