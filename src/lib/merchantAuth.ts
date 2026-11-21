@@ -45,8 +45,14 @@ export async function requireMerchant(): Promise<void> {
   if (!(await isMerchant())) throw new DomainError("not_allowed", "Enter the merchant key to use this page.");
 }
 
-/** The studio channel's name: secret, so only the customer's device and key holders can send or listen. */
-export async function stageChannel(): Promise<string | null> {
-  if (!(await isMerchant()) && !(await currentCustomer())) return null;
+/** The stage link's own key (STAGE_KEY, server only): payalone.vercel.app/stage?key=… opens the studio screen with no typing. */
+function stageKeyOk(typed: string | null): boolean {
+  const k = process.env.STAGE_KEY?.trim();
+  return Boolean(k && typed && same(typed.trim(), k));
+}
+
+/** The studio channel's name: secret, so only the customer's device, key holders and the stage link can send or listen. */
+export async function stageChannel(stageKey: string | null = null): Promise<string | null> {
+  if (!stageKeyOk(stageKey) && !(await isMerchant()) && !(await currentCustomer())) return null;
   return `live-${sign(`stage:${configuredKey() ?? "sim"}`).slice(0, 24)}`;
 }

@@ -23,7 +23,8 @@ export const LIVE_KEY = "live";
 /** Asks the server for the studio channel's secret name. Null when this device may not use it. */
 export async function stageChannelName(): Promise<{ channel: string } | { error: string; locked: boolean }> {
   try {
-    const r = await fetch("/api/stage", { cache: "no-store" });
+    const key = new URLSearchParams(window.location.search).get("key");
+    const r = await fetch(`/api/stage${key ? `?key=${encodeURIComponent(key)}` : ""}`, { cache: "no-store" });
     const d = (await r.json().catch(() => null)) as { channel?: string; error?: { message?: string } } | null;
     if (r.ok && d?.channel) return { channel: d.channel };
     return { error: d?.error?.message ?? `HTTP ${r.status}`, locked: r.status === 403 };
