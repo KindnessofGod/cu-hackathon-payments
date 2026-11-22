@@ -1,0 +1,4 @@
+.tts-cache/
+results/
+audio/*.wav
+!audio/.gitkeep
