@@ -15,6 +15,11 @@ Live: https://payalone.vercel.app (seller: `/merchant`, customer: `/wallet`).
 
 *The live home screen at payalone.vercel.app (screenshot taken 27 Nov 2026). The seller page asks for a merchant key, and the customer page starts with device setup, so only the home screen is shown here.*
 
+## The customer app
+<p align="center"><img src="docs/img/customer-app.png" alt="Pay Alone customer app on an iPad: pay code, amount left to spend this week, weekly spending chart, people you pay, recent activity, and the voice orb" width="760"></p>
+
+*The customer app on an iPad, 18 Nov 2026, on the Interledger test wallet with play money. It shows the pay code, what is left of the weekly limit, this week's spending, people paid, recent activity and the voice assistant starting up.*
+
 ## Two ways to approve a payment
 <p align="center"><img src="docs/img/two-approval-paths.svg" alt="Diagram: path 1 is the app with fingerprint approval; path 2 is a phone call from any phone with a keypad PIN that is never spoken" width="900"></p>
 
