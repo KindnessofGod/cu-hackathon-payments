@@ -19,8 +19,8 @@ const ORDER: Record<Lang, Provider[]> = {
   ha: ["elevenlabs", "spitch"],
 };
 
-async function eleven(text: string, lang: Lang): Promise<ArrayBuffer> {
-  const key = process.env.ELEVENLABS_API_KEY;
+async function eleven(text: string, lang: Lang, own?: string): Promise<ArrayBuffer> {
+  const key = own ?? process.env.ELEVENLABS_API_KEY;
   if (!key) throw new Error("no key");
   const call = (languageCode?: string) =>
     fetch(`https://api.elevenlabs.io/v1/text-to-speech/${ELEVEN_VOICE}?output_format=mp3_44100_128`, {
@@ -44,11 +44,12 @@ async function spitch(text: string, lang: Lang): Promise<ArrayBuffer> {
 }
 
 /** Returns MP3 audio and which service made it, or throws if every service failed. */
-export async function synthesize(text: string, lang: Lang): Promise<{ audio: ArrayBuffer; provider: Provider }> {
+export async function synthesize(text: string, lang: Lang, opts: { elevenKey?: string } = {}): Promise<{ audio: ArrayBuffer; provider: Provider }> {
   const errors: string[] = [];
-  for (const p of ORDER[lang]) {
+  // A visitor's own key powers ElevenLabs only; the owner's Spitch credits are never used for them.
+  for (const p of opts.elevenKey ? ORDER[lang].filter((x) => x === "elevenlabs") : ORDER[lang]) {
     try {
-      return { audio: p === "spitch" ? await spitch(text, lang) : await eleven(text, lang), provider: p };
+      return { audio: p === "spitch" ? await spitch(text, lang) : await eleven(text, lang, opts.elevenKey), provider: p };
     } catch (e) {
       errors.push(`${p}: ${e instanceof Error ? e.message.slice(0, 80) : "failed"}`);
     }
@@ -69,8 +70,8 @@ const STT_ORDER: Record<Lang, Provider[]> = {
   ha: ["spitch", "elevenlabs"],
 };
 
-async function elevenHear(wav: Uint8Array, lang: Lang): Promise<string> {
-  const key = process.env.ELEVENLABS_API_KEY;
+async function elevenHear(wav: Uint8Array, lang: Lang, own?: string): Promise<string> {
+  const key = own ?? process.env.ELEVENLABS_API_KEY;
   if (!key) throw new Error("no key");
   const call = (languageCode?: string) => {
     const form = new FormData();
@@ -100,11 +101,11 @@ async function spitchHear(wav: Uint8Array, lang: Lang): Promise<string> {
 }
 
 /** Returns what was said and which service heard it, or throws if every service failed. */
-export async function transcribe(wav: Uint8Array, lang: Lang): Promise<{ text: string; provider: Provider }> {
+export async function transcribe(wav: Uint8Array, lang: Lang, opts: { elevenKey?: string } = {}): Promise<{ text: string; provider: Provider }> {
   const errors: string[] = [];
-  for (const p of STT_ORDER[lang]) {
+  for (const p of opts.elevenKey ? STT_ORDER[lang].filter((x) => x === "elevenlabs") : STT_ORDER[lang]) {
     try {
-      return { text: p === "spitch" ? await spitchHear(wav, lang) : await elevenHear(wav, lang), provider: p };
+      return { text: p === "spitch" ? await spitchHear(wav, lang) : await elevenHear(wav, lang, opts.elevenKey), provider: p };
     } catch (e) {
       errors.push(`${p}: ${e instanceof Error ? e.message.slice(0, 80) : "failed"}`);
     }

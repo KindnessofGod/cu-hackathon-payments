@@ -208,6 +208,8 @@ interface HistoryItem {
 
 interface State {
   simulated: boolean;
+  /** "locked" or "byok": the demo has no live voice yet (see lib/voice/entitlement.ts), so the app does not try to start it. */
+  voice?: "open" | "judge" | "byok" | "locked";
   history?: HistoryItem[];
   customer: CustomerView | null;
   suggestedWalletAddress?: string;
@@ -632,7 +634,7 @@ export default function WalletPage() {
   // Each opening counts once; leaving the app ends the call (it would keep using voice minutes).
   const [needTap, setNeedTap] = useState(false);
   const autoDone = useRef(false);
-  const autoOk = Boolean(prefsLoaded && prefs.on && prefs.natural && prefs.auto && state?.customer);
+  const autoOk = Boolean(prefsLoaded && prefs.on && prefs.natural && prefs.auto && state?.customer && state.voice !== "locked" && state.voice !== "byok");
   const autoPending = state?.pending ?? null;
   const autoWaitQuote = Boolean(autoPending && !autoPending.debitAmount);
   useEffect(() => {
@@ -827,6 +829,7 @@ export default function WalletPage() {
         sayOurs={sayOurs}
         onDone={finish}
         live={live}
+        voiceMode={state.voice}
       />
     );
 
@@ -1164,7 +1167,9 @@ function Approve({
   sayOurs,
   onDone,
   live,
+  voiceMode,
 }: {
+  voiceMode?: State["voice"];
   request: RequestView;
   fingerprint: CustomerView["fingerprint"];
   cap: CapView | null;
@@ -1193,7 +1198,10 @@ function Approve({
   armedRef.current = armed;
   const ready = Boolean(request.challenge && request.debitAmount);
   const sentence = useMemo(() => requestSentence(request), [request]);
-  const voiceAnswers = prefs.on && prefs.listen && canListen();
+  // Demo with no voice unlocked: no voice attempt, one tap pays. With the visitor's own key: the spoken read-back
+  // and spoken answer (no live conversation, which needs judge access).
+  const voiceAnswers = prefs.on && prefs.listen && canListen() && voiceMode !== "locked";
+  const liveBlocked = voiceMode === "byok";
   const consentNote = request.needsWalletConsent
     ? " You have no spending limit yet, so your wallet will ask you to confirm this one payment on its own page."
     : "";
@@ -1400,7 +1408,7 @@ function Approve({
     // First tap with voice answers on: start talking. A tap while armed goes straight on.
     // If the voice is not available on this device (no microphone, voice service down), taps pay instead.
     if (!spoken && !armed && voiceAnswers && !voiceDown.current) {
-      if (prefs.natural ? await talk_() : await askByVoice().then(() => true, () => false)) return "";
+      if (prefs.natural && !liveBlocked ? await talk_() : await askByVoice().then(() => true, () => false)) return "";
       voiceDown.current = true;
       const text = needsFinger
         ? "The voice is not available right now. Tap again, then rest your finger on the Home button to pay. To refuse, do nothing."

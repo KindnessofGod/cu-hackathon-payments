@@ -1,4 +1,4 @@
-import { MockGateway } from "./mock";
+import { MOCK_HOST, MockGateway } from "./mock";
 import { RealGateway, realConfigured } from "./real";
 import { OpError, type PaymentsGateway, type Role } from "./types";
 
@@ -23,4 +23,20 @@ export function gateway(role: Role): PaymentsGateway {
     else throw new OpError("invalid_request", `No keys configured for the ${role} app. Fill in .env, or set MOCK_OP=1 to use the simulated wallet.`);
   }
   return cache[key]!;
+}
+
+/** True for the simulated wallet addresses (https://mock-wallet.invalid/<name>). */
+export function isMockWallet(walletUrl: string): boolean {
+  return walletUrl.startsWith(`${MOCK_HOST}/`) && walletUrl.length > MOCK_HOST.length + 1;
+}
+
+let sandbox: MockGateway | undefined;
+
+/**
+ * The gateway for one wallet. A simulated wallet address always gets the SIMULATED gateway, even when the
+ * app runs on the real rail: that is how the judge demo works with no real wallet and no real money.
+ */
+export function gatewayFor(role: Role, walletUrl: string | undefined): PaymentsGateway {
+  if (walletUrl && isMockWallet(walletUrl)) return (sandbox ??= new MockGateway());
+  return gateway(role);
 }

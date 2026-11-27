@@ -1,5 +1,6 @@
 import { capSummary, getRequestFor } from "@/lib/domain";
-import { fail, requireCustomer } from "@/lib/http";
+import { fail, requireCustomer, voiceJar } from "@/lib/http";
+import { voiceGrant } from "@/lib/voice/entitlement";
 import { synthesize } from "@/lib/voice/providers";
 import { exceedsCap, remainingOfCap } from "@/lib/money";
 import { answerSentence, askingSentence, howtoSentence, isLang, leftSentence, paidWithLeftSentence, replySentence, resultSentence, type HowTo, type ReplyKind } from "@/lib/voice/sentences";
@@ -15,6 +16,8 @@ export async function GET(req: Request) {
     const q = new URL(req.url).searchParams;
     const lang = isLang(q.get("lang")) ? (q.get("lang") as Parameters<typeof askingSentence>[0]) : "en";
     const customer = await requireCustomer();
+    const grant = await voiceGrant(customer, await voiceJar(), "speak");
+    if ("denied" in grant) return new Response(null, { status: 403 }); // the page falls back to the browser's own voice
     let text: string;
     const what = q.get("what");
     if (what === "howto") {
@@ -56,7 +59,7 @@ export async function GET(req: Request) {
         return new Response(null, { status: 400 });
       }
     }
-    const { audio, provider } = await synthesize(text, lang);
+    const { audio, provider } = await synthesize(text, lang, grant.who === "byok" ? { elevenKey: grant.elevenKey } : {});
     return new Response(audio, { headers: { "content-type": "audio/mpeg", "cache-control": "no-store", "x-voice-provider": provider } });
   } catch (e) {
     if (e instanceof Error && /elevenlabs|spitch|not available|no key/.test(e.message)) {

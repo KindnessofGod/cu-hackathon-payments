@@ -1,5 +1,6 @@
 import { balanceEstimate, capSummary, customerHistory, getRequestFor, isOpen, payeesOf } from "@/lib/domain";
-import { fail, requireCustomer } from "@/lib/http";
+import { fail, requireCustomer, voiceJar, voiceLocked } from "@/lib/http";
+import { voiceGrant } from "@/lib/voice/entitlement";
 import { getStore } from "@/lib/store";
 import { exceedsCap, remainingOfCap, speakAmount } from "@/lib/money";
 import { growSummary, growText } from "@/lib/grow";
@@ -43,6 +44,8 @@ export async function GET(req: Request) {
     const lang: Lang = isLang(q.get("lang")) ? (q.get("lang") as Lang) : "pcm";
     const native = q.get("native") === "1";
     const customer = await requireCustomer();
+    const grant = await voiceGrant(customer, await voiceJar(), "agent");
+    if ("denied" in grant) return voiceLocked(grant.message, grant.reason);
     const id = q.get("id");
     const r = id ? await getRequestFor(customer, id) : null;
     if (r && (!isOpen(r) || !r.quote)) return Response.json({ error: { kind: "not_ready", message: "This request is not waiting for an answer." } }, { status: 409 });
