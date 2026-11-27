@@ -30,4 +30,11 @@ export class PostgresStore implements Store {
     const r = await this.pool.query("select doc from op_docs where collection = $1 order by updated_at desc limit 500", [collection]);
     return r.rows.map((row) => row.doc as T);
   }
+
+  async listBy<T>(collection: string, field: string, value: string): Promise<T[]> {
+    // Only plain field names, so the name can sit in the query text; the value is always a parameter.
+    if (!/^[A-Za-z][A-Za-z0-9]*$/.test(field)) throw new Error("bad field name");
+    const r = await this.pool.query(`select doc from op_docs where collection = $1 and doc->>'${field}' = $2 order by updated_at desc limit 500`, [collection, value]);
+    return r.rows.map((row) => row.doc as T);
+  }
 }

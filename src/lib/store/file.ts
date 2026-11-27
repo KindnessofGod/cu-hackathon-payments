@@ -55,4 +55,8 @@ export class FileStore implements Store {
   list<T>(collection: string): Promise<T[]> {
     return this.serial(async () => Object.values((await this.read())[collection] ?? {}) as T[]);
   }
+
+  async listBy<T>(collection: string, field: string, value: string): Promise<T[]> {
+    return (await this.list<Record<string, unknown>>(collection)).filter((d) => d[field] === value) as T[];
+  }
 }

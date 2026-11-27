@@ -60,7 +60,7 @@ export async function removePush(customerId: string, endpoint: string): Promise<
 }
 
 export async function pushCount(customerId: string): Promise<number> {
-  return (await store().list<StoredPush>("push")).filter((p) => p.customerId === customerId).length;
+  return (await store().listBy<StoredPush>("push", "customerId", customerId)).length;
 }
 
 export interface Alert {
@@ -76,7 +76,7 @@ export async function alertCustomer(customerId: string, alert: Alert): Promise<{
   let failed = 0;
   try {
     if (!configure()) return { sent, failed };
-    const subs = (await store().list<StoredPush>("push")).filter((p) => p.customerId === customerId);
+    const subs = await store().listBy<StoredPush>("push", "customerId", customerId);
     await Promise.all(
       subs.map(async (p) => {
         try {

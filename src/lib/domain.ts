@@ -195,7 +195,7 @@ export async function recentCustomers() {
 /** currency "NGN": the seller typed naira; on a dollar wallet it becomes dollars at the CBN rate. */
 export async function createRequest(payCode: string, amountMajor: string, currency?: "NGN"): Promise<PaymentRequest> {
   const code = payCode.replace(/\D/g, "");
-  const customer = (await store().list<Customer>("customers")).find((c) => c.payCode === code);
+  const customer = (await store().listBy<Customer>("customers", "payCode", code))[0];
   if (!customer) throw new DomainError("not_found", "No customer has that pay code. Check the six digits.");
 
   const sellerUrl = merchantWalletUrlFor(customer.wallet.id);
@@ -229,8 +229,8 @@ export async function createRequest(payCode: string, amountMajor: string, curren
   };
   // One request from a seller at a time: a newer one (a second tap on Send, a corrected amount) replaces
   // any older one still unanswered, so the customer never pays and then hears the same seller ask again.
-  for (const old of await store().list<PaymentRequest>("requests")) {
-    if (old.customerId !== customer.id || old.merchantWalletId !== wallet.id || old.outgoing) continue;
+  for (const old of await store().listBy<PaymentRequest>("requests", "customerId", customer.id)) {
+    if (old.merchantWalletId !== wallet.id || old.outgoing) continue;
     if (old.status !== "waiting" && old.status !== "quoted") continue;
     old.status = "expired";
     old.failure = { kind: "expired", message: `Replaced by a newer request from ${request.merchantName}. No money moved.` };
@@ -255,8 +255,8 @@ const RECENT_ASK_MS = 24 * 60 * 60 * 1000;
 export async function payeesOf(customer: Customer): Promise<Payee[]> {
   const out: Payee[] = Object.values(customer.contacts).map((c) => ({ walletId: c.walletId, name: c.name, why: "paid before" as const }));
   const since = Date.now() - RECENT_ASK_MS;
-  const asked = (await store().list<PaymentRequest>("requests"))
-    .filter((r) => r.customerId === customer.id && !r.outgoing && Date.parse(r.createdAt) >= since)
+  const asked = (await store().listBy<PaymentRequest>("requests", "customerId", customer.id))
+    .filter((r) => !r.outgoing && Date.parse(r.createdAt) >= since)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   for (const r of asked) {
     if (!out.some((p) => p.walletId === r.merchantWalletId)) out.push({ walletId: r.merchantWalletId, name: r.merchantName, why: "asked recently" });
@@ -624,8 +624,8 @@ function subjectOf(r: PaymentRequest) {
 
 /** The newest open request for this customer, priced by their own wallet. */
 export async function pendingRequest(customer: Customer): Promise<PaymentRequest | null> {
-  const mine = (await store().list<PaymentRequest>("requests"))
-    .filter((r) => r.customerId === customer.id && isOpen(r))
+  const mine = (await store().listBy<PaymentRequest>("requests", "customerId", customer.id))
+    .filter((r) => isOpen(r))
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   for (const candidate of mine) {
     const r = await expireIfDue(candidate);
@@ -658,8 +658,8 @@ export async function getRequestFor(customer: Customer, requestId: string): Prom
 }
 
 export async function latestFinished(customer: Customer): Promise<PaymentRequest | null> {
-  const mine = (await store().list<PaymentRequest>("requests"))
-    .filter((r) => r.customerId === customer.id && !isOpen(r))
+  const mine = (await store().listBy<PaymentRequest>("requests", "customerId", customer.id))
+    .filter((r) => !isOpen(r))
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   return mine[0] ? expireIfDue(mine[0]) : null;
 }
@@ -821,8 +821,8 @@ const HISTORY_LIMIT = 20;
 export async function balanceEstimate(customer: Customer): Promise<{ amount: Amount; asOf: string; source: string; paidSince: Amount; count: number } | null> {
   const note = customer.balanceNote;
   if (!note) return null;
-  const paid = (await store().list<PaymentRequest>("requests")).filter(
-    (r) => r.customerId === customer.id && r.status === "paid" && r.paid && r.paid.at > note.at && r.paid.debitAmount.assetCode === note.amount.assetCode,
+  const paid = (await store().listBy<PaymentRequest>("requests", "customerId", customer.id)).filter(
+    (r) => r.status === "paid" && r.paid && r.paid.at > note.at && r.paid.debitAmount.assetCode === note.amount.assetCode,
   );
   let spent = BigInt(0);
   for (const r of paid) spent += BigInt(r.paid!.debitAmount.value);
@@ -836,8 +836,7 @@ export async function balanceEstimate(customer: Customer): Promise<{ amount: Amo
 }
 
 export async function customerHistory(customer: Customer) {
-  const mine = (await store().list<PaymentRequest>("requests"))
-    .filter((r) => r.customerId === customer.id)
+  const mine = (await store().listBy<PaymentRequest>("requests", "customerId", customer.id))
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     .slice(0, HISTORY_LIMIT);
   const out = [];
@@ -851,9 +850,10 @@ export async function customerHistory(customer: Customer) {
 
 export async function merchantHistory(onlyCustomerId?: string) {
   const wallet = normalizeWalletUrl(onlyCustomerId ? `${MOCK_HOST}/mama-chidi-shop` : merchantWalletUrl());
-  const customers = await store().list<Customer>("customers");
-  const mine = (await store().list<PaymentRequest>("requests"))
-    .filter((r) => normalizeWalletUrl(r.merchantWalletId) === wallet && (!onlyCustomerId || r.customerId === onlyCustomerId))
+  const customers = onlyCustomerId ? [] : await store().list<Customer>("customers");
+  const pool = onlyCustomerId ? await store().listBy<PaymentRequest>("requests", "customerId", onlyCustomerId) : await store().list<PaymentRequest>("requests");
+  const mine = pool
+    .filter((r) => normalizeWalletUrl(r.merchantWalletId) === wallet)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     .slice(0, HISTORY_LIMIT);
   return mine.map((r) => {

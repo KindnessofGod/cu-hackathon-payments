@@ -8,6 +8,8 @@ export interface Store {
   put<T>(collection: string, id: string, doc: T): Promise<void>;
   delete(collection: string, id: string): Promise<void>;
   list<T>(collection: string): Promise<T[]>;
+  /** Documents whose top-level text field equals value. The database does the filtering, so a poll reads only its own rows. */
+  listBy<T>(collection: string, field: string, value: string): Promise<T[]>;
 }
 
 let store: Store | undefined;

@@ -5,7 +5,7 @@ let mem = new MemoryStore();
 vi.mock("./store", () => ({ getStore: () => mem }));
 vi.mock("./push", () => ({ alertCustomer: async () => {} }));
 
-import { approveRequest, capSummary, createRequest, customerFromDeviceToken, merchantView, pendingRequest, recentCustomers } from "./domain";
+import { customerHistory, approveRequest, capSummary, createRequest, customerFromDeviceToken, merchantView, pendingRequest, recentCustomers } from "./domain";
 import { demoSellerCookie, demoSellerFromCookie, startDemo } from "./demo";
 import { MOCK_HOST } from "./op/mock";
 import { issueChallenge } from "./approval";
@@ -57,5 +57,18 @@ describe("one-device demo", () => {
     expect(await demoSellerFromCookie(`${customer.id}.forged`)).toBeNull();
     expect(await demoSellerFromCookie(`other.${cookie.split(".")[1]}`)).toBeNull();
     expect(await demoSellerFromCookie(undefined)).toBeNull();
+  });
+
+  it("a poll reads only its own customer's rows, however many other customers exist", async () => {
+    for (let i = 0; i < 15; i++) {
+      const other = await startDemo("https://example.test");
+      await createRequest(other.customer.payCode, "100");
+    }
+    const { customer } = await startDemo("https://example.test");
+    await createRequest(customer.payCode, "300");
+    const before = (mem as MemoryStore).reads;
+    await pendingRequest(customer);
+    await customerHistory(customer);
+    expect((mem as MemoryStore).reads - before).toBeLessThan(6);
   });
 });
