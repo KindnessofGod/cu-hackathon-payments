@@ -122,10 +122,10 @@ export default function Home() {
         <div className="lp-wrap" id="contact">
           <section className="lp-final" aria-labelledby="c">
             <h2 id="c">See it for yourself</h2>
-            <p>Try the demo in under a minute, or get in touch for a live walkthrough or judge access.</p>
+            <p>Try the demo in under a minute, or request judge access to unlock live voice. Want a live walkthrough? Email us.</p>
             <div className="lp-cta">
               <Link href="/demo" className="button">Open the demo</Link>
-              <a href={`${CONTACT}?subject=Pay%20Alone%20judge%20access`} className="button secondary">Request judge access</a>
+              <Link href="/demo#voice-h" className="button secondary">Request judge access</Link>
             </div>
           </section>
           <footer className="lp-footer">
