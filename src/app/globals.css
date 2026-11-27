@@ -540,3 +540,28 @@ button.secondary:hover:not(:disabled) { background: var(--brand-soft); }
 .banner { background: var(--brand-soft); }
 .demo-pane { border-radius: 28px; }
 @media (min-width: 52rem) { .steps.demo-steps { grid-template-columns: repeat(3, 1fr); } }
+
+/* ---------- app pages: depth, motion, device frames ---------- */
+.appbar { position: sticky; top: 0; z-index: 20; background: rgba(246, 243, 236, 0.85); backdrop-filter: blur(14px); }
+.simulated .appbar { top: 3rem; }
+main h1 { font-size: clamp(2.4rem, 6vw, 4.2rem); line-height: 0.98; letter-spacing: -0.035em; }
+main h1 em { color: var(--brand); }
+.card { position: relative; transition: transform 0.25s ease, box-shadow 0.25s ease; }
+@media (hover: hover) { .grid-2 > a.card:hover { transform: translateY(-4px); box-shadow: 0 24px 50px -24px rgba(13, 31, 25, 0.3); } }
+input, select { border-radius: 18px; background: #fff; transition: border-color 0.15s, box-shadow 0.15s; }
+input:focus, select:focus { border-color: var(--ink); box-shadow: 0 0 0 4px rgba(13, 31, 25, 0.08); }
+.money-input, .code-input { border-radius: 18px; }
+.status { border-radius: 22px; }
+.meter > span { background: linear-gradient(90deg, var(--brand), #5fd39a); }
+.chip[aria-pressed="true"] { border-color: var(--ink); background: var(--ink); color: #fff; }
+
+/* demo: each app sits in a phone-style frame with a label */
+.demo-col { display: grid; gap: 0.7rem; align-content: start; }
+.demo-label { display: inline-flex; align-items: center; gap: 0.5rem; justify-self: start; font-size: 0.82rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; padding: 0.45rem 0.9rem; border-radius: 999px; }
+.demo-label.customer { background: var(--brand-soft); color: #2a4a12; }
+.demo-label.seller { background: var(--seller-soft); color: var(--seller); }
+.demo-pane { border: 0.7rem solid var(--ink); border-radius: 2.6rem; box-shadow: 0 50px 80px -30px rgba(13, 31, 25, 0.45); background: var(--bg); }
+.demo-pane.seller, .demo-pane.customer { border-color: var(--ink); }
+.demo-stage { gap: 2rem; }
+.demo-steps li { border-radius: 24px; }
+.demo-bar .demo-tabs button { min-height: 3rem; }

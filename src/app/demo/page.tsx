@@ -97,7 +97,7 @@ export default function DemoPage() {
       <main className="demo">
         <section className="hero">
           <span className="eyebrow">Judge demo · simulated wallet</span>
-          <h1>Try Pay Alone on this one device.</h1>
+          <h1>Try Pay Alone <em>on this one device.</em></h1>
           <p className="lead">
             You get a customer and a seller side by side. The customer has a weekly limit already set. Ask for a payment as the seller, hear it as the customer,
             and approve it. Everything here runs on a <strong>simulated</strong> wallet with play money: no real money moves, and the AI never approves or pays.
@@ -165,8 +165,8 @@ export default function DemoPage() {
               <li><strong>Seller:</strong> watch it become &ldquo;received&rdquo;.</li>
             </ol>
             <div className="demo-stage" data-tab={tab}>
-              <iframe key={`c${frame}`} className="demo-pane customer" title="Customer app" src="/wallet" allow="microphone; autoplay; publickey-credentials-get; publickey-credentials-create" />
-              <iframe key={`s${frame}`} className="demo-pane seller" title="Seller app" src="/merchant" allow="camera; autoplay" />
+              <div className="demo-col"><span className="demo-label customer"><Icon name="person" size={18} /> Customer · hears and approves</span><iframe key={`c${frame}`} className="demo-pane customer" title="Customer app" src="/wallet" allow="microphone; autoplay; publickey-credentials-get; publickey-credentials-create" /></div>
+              <div className="demo-col"><span className="demo-label seller"><Icon name="shop" size={18} /> Seller · asks for payment</span><iframe key={`s${frame}`} className="demo-pane seller" title="Seller app" src="/merchant" allow="camera; autoplay" /></div>
             </div>
           </>
         )}
