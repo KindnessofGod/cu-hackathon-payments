@@ -2,16 +2,23 @@
 
 # Pay Alone: a wallet for people who must operate alone
 
-CU Next Gen Hackathon 2026, Track 2: Inclusive Payments and Financial Access. Built on Interledger Open Payments.
+Payments for blind, elderly and non-reading people. Built on Interledger Open Payments (test network).
+
+### 👉 [Try the live app: payalone.vercel.app](https://payalone.vercel.app)
 
 
 > **Status, 17 Nov 2026, night:** on the Interledger test wallet, through the hosted app: a one-time payment with consent on the wallet's page, a weekly spending limit set once, payments approved inside the app under that limit (including with Touch ID on an iPad), and the wallet refusing a payment over it. The customer can talk about a request by voice in five languages. "Stop everything" has so far run only against the SIMULATED wallet. The native iPad app is built and installs, but iPadOS has not yet let it open (see Limitations).
 
-Hosted: https://payalone.vercel.app (seller: `/merchant`, customer: `/wallet`).
+Live: https://payalone.vercel.app (seller: `/merchant`, customer: `/wallet`).
 
-<p align="center"><img src="docs/img/home.png" alt="Pay Alone home screen: I am paying, I am selling" width="760"></p>
+<p align="center"><a href="https://payalone.vercel.app"><img src="docs/img/home.png" alt="Pay Alone home screen: I am paying, I am selling" width="760"></a></p>
 
 *The live home screen at payalone.vercel.app (screenshot taken 27 Nov 2026). The seller page asks for a merchant key, and the customer page starts with device setup, so only the home screen is shown here.*
+
+## The customer app
+<p align="center"><img src="docs/img/customer-app.png" alt="Pay Alone customer app on an iPad: pay code, amount left to spend this week, weekly spending chart, people you pay, recent activity, and the voice orb" width="760"></p>
+
+*The customer app on an iPad, 18 Nov 2026, on the Interledger test wallet with play money. It shows the pay code, what is left of the weekly limit, this week's spending, people paid, recent activity and the voice assistant starting up.*
 
 ## Two ways to approve a payment
 <p align="center"><img src="docs/img/two-approval-paths.svg" alt="Diagram: path 1 is the app with fingerprint approval; path 2 is a phone call from any phone with a keypad PIN that is never spoken" width="900"></p>
