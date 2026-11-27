@@ -51,3 +51,13 @@ export async function body(req: Request): Promise<Record<string, unknown>> {
     return {};
   }
 }
+
+/** The voice-access cookies of this request (see lib/voice/entitlement.ts). */
+export async function voiceJar(): Promise<{ byok?: string; judge?: string }> {
+  const jar = await cookies();
+  return { byok: jar.get("cw_byok")?.value, judge: jar.get("cw_judge")?.value };
+}
+
+export function voiceLocked(message: string, reason: string) {
+  return NextResponse.json({ error: { kind: "voice_locked", reason, message } }, { status: 403, headers: { "cache-control": "no-store" } });
+}

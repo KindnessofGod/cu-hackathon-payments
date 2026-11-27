@@ -4,7 +4,7 @@ import { challengeIsValid, issueChallenge, verifyApproval, type ApprovalChalleng
 import { makeInterval, periodEnd, periodKey, type Every } from "./interval";
 import { amountFromSpeech, exceedsCap, formatAmount, parseMajor, remainingOfCap, speakAmount, type Amount } from "./money";
 import { alertCustomer } from "./push";
-import { gateway, isSimulated, OpError, type OpErrorKind, type QuoteInfo, type WalletInfo } from "./op";
+import { gatewayFor, isMockWallet, isSimulated, OpError, type OpErrorKind, type QuoteInfo, type WalletInfo } from "./op";
 import { verifyInteractionHash } from "./op/hash";
 import { MOCK_HOST } from "./op/mock";
 import { normalizeWalletUrl } from "./op/real";
@@ -72,6 +72,8 @@ export interface Customer {
    * balance to read, so Pay Alone works the balance out from this: the figure minus payments it made since.
    */
   balanceNote?: { amount: Amount; at: string; source: string };
+  /** A one-device judge demo customer: simulated wallet, play money. Never mixed with the real seller. */
+  demo?: boolean;
 }
 
 function hasFingerprint(c: Customer): boolean {
@@ -166,8 +168,14 @@ export function merchantWalletUrl(): string {
   return url;
 }
 
-export async function merchantInfo() {
-  const w = await gateway("merchant").getWallet(merchantWalletUrl());
+/** The seller wallet that serves this customer: a simulated customer is always served by the simulated seller. */
+export function merchantWalletUrlFor(customerWalletUrl: string): string {
+  return isMockWallet(customerWalletUrl) ? `${MOCK_HOST}/mama-chidi-shop` : merchantWalletUrl();
+}
+
+export async function merchantInfo(simulatedSeller = false) {
+  const url = simulatedSeller ? `${MOCK_HOST}/mama-chidi-shop` : merchantWalletUrl();
+  const w = await gatewayFor("merchant", url).getWallet(url);
   return { name: w.publicName ?? w.id, walletAddress: w.id, assetCode: w.assetCode, assetScale: w.assetScale };
 }
 
@@ -178,7 +186,7 @@ export async function recentCustomers() {
   for (const r of requests) {
     if (seen.has(r.customerPayCode)) continue;
     const c = customers.find((x) => x.id === r.customerId);
-    if (c) seen.set(r.customerPayCode, { payCode: c.payCode, name: c.wallet.publicName ?? "Customer", lastRequestAt: r.createdAt });
+    if (c && !isMockWallet(c.wallet.id)) seen.set(r.customerPayCode, { payCode: c.payCode, name: c.wallet.publicName ?? "Customer", lastRequestAt: r.createdAt });
     if (seen.size >= 5) break;
   }
   return [...seen.values()];
@@ -190,8 +198,9 @@ export async function createRequest(payCode: string, amountMajor: string, curren
   const customer = (await store().list<Customer>("customers")).find((c) => c.payCode === code);
   if (!customer) throw new DomainError("not_found", "No customer has that pay code. Check the six digits.");
 
-  const g = gateway("merchant");
-  const wallet = await g.getWallet(merchantWalletUrl());
+  const sellerUrl = merchantWalletUrlFor(customer.wallet.id);
+  const g = gatewayFor("merchant", sellerUrl);
+  const wallet = await g.getWallet(sellerUrl);
   const typed = amountMajor.trim().replace(/,/g, "");
   const minor =
     currency === "NGN" && wallet.assetCode === "USD"
@@ -300,7 +309,10 @@ export async function prepareOutgoing(
   // Nothing is cancelled for the customer: they decide about the payment that is waiting first.
   const waiting = await pendingRequest(customer);
   if (waiting) throw new DomainError("wrong_state", `A payment is already waiting for an answer: ${describeWaiting(waiting)}. Pay it or cancel it first.`);
-  const g = gateway("wallet");
+  if (isMockWallet(customer.wallet.id) && !isMockWallet(walletUrl)) {
+    throw new DomainError("wrong_state", "The simulated demo wallet can only pay simulated wallets. Saving and practice investing are not part of the demo.");
+  }
+  const g = gatewayFor("wallet", customer.wallet.id);
   const wallet = await g.getWallet(walletUrl);
   const said = amountFromSpeech(amountMajor, wallet.assetCode, wallet.assetScale);
   if (!said) throw new DomainError("bad_input", "Say an amount greater than zero, for example five thousand naira.");
@@ -351,10 +363,10 @@ function sellerReason(status: MerchantStatus | RequestStatus): string | undefine
 }
 
 /** What the seller sees. The received amount is read from the seller's wallet, not from what was typed. */
-export async function merchantView(requestId: string) {
+export async function merchantView(requestId: string, onlyCustomerId?: string) {
   const request = await store().get<PaymentRequest>("requests", requestId);
-  if (!request) throw new DomainError("not_found", "That request does not exist.");
-  const g = gateway("merchant");
+  if (!request || (onlyCustomerId && request.customerId !== onlyCustomerId)) throw new DomainError("not_found", "That request does not exist.");
+  const g = gatewayFor("merchant", request.merchantWalletId);
   const wallet = await g.getWallet(request.merchantWalletId);
   const incoming = await g.getIncomingPayment({ wallet, url: request.incomingPaymentUrl });
 
@@ -380,7 +392,7 @@ export async function merchantView(requestId: string) {
 // ---------- wallet app: identity ----------
 
 export async function setupCustomer(walletUrl: string): Promise<{ customer: Customer; deviceToken: string }> {
-  const wallet = await gateway("wallet").getWallet(walletUrl);
+  const wallet = await gatewayFor("wallet", walletUrl).getWallet(walletUrl);
   const customers = await store().list<Customer>("customers");
   const secret = randomToken(24);
   const customer: Customer = {
@@ -485,7 +497,7 @@ async function startGrant(
 ): Promise<string> {
   const id = randomToken(16);
   const clientNonce = randomToken(16);
-  const pending = await gateway("wallet").requestOutgoingGrant({
+  const pending = await gatewayFor("wallet", customer.wallet.id).requestOutgoingGrant({
     wallet: customer.wallet,
     limits: { debitAmount: s.limit, interval: s.interval },
     finishUri: `${baseUrl}/api/wallet/callback?session=${id}`,
@@ -542,7 +554,7 @@ export async function handleCallback(
   const pending = JSON.parse(open(session.sealed)) as { continueUri: string; continueToken: string };
   let token;
   try {
-    token = await gateway("wallet").continueGrant({ ...pending, interactRef: params.interactRef });
+    token = await gatewayFor("wallet", customer.wallet.id).continueGrant({ ...pending, interactRef: params.interactRef });
   } catch (e) {
     return fail(failureFrom(e), "failed", "failed");
   }
@@ -555,7 +567,7 @@ export async function handleCallback(
     if (old?.status === "active") {
       try {
         const o = JSON.parse(open(old.sealed)) as CapSecrets;
-        await gateway("wallet").cancelGrant({ continueUri: o.continueUri, continueToken: o.continueToken });
+        await gatewayFor("wallet", customer.wallet.id).cancelGrant({ continueUri: o.continueUri, continueToken: o.continueToken });
       } catch {
         // the old permission may already have expired; the new one is set either way
       }
@@ -583,7 +595,7 @@ export async function stopEverything(customer: Customer): Promise<void> {
   const cap = customer.cap;
   if (!cap || cap.status !== "active") throw new DomainError("wrong_state", "There is no active spending permission to stop.");
   const s = JSON.parse(open(cap.sealed)) as CapSecrets;
-  await gateway("wallet").cancelGrant({ continueUri: s.continueUri, continueToken: s.continueToken });
+  await gatewayFor("wallet", customer.wallet.id).cancelGrant({ continueUri: s.continueUri, continueToken: s.continueToken });
   cap.status = "stopped";
   cap.stoppedAt = new Date().toISOString();
   await store().put("customers", customer.id, customer);
@@ -621,7 +633,7 @@ export async function pendingRequest(customer: Customer): Promise<PaymentRequest
     const quoteStale = r.quote?.expiresAt ? Date.parse(r.quote.expiresAt) < Date.now() + 15_000 : false;
     if (r.status === "waiting" || quoteStale) {
       try {
-        r.quote = await gateway("wallet").createQuote({ wallet: customer.wallet, incomingPaymentUrl: r.incomingPaymentUrl });
+        r.quote = await gatewayFor("wallet", customer.wallet.id).createQuote({ wallet: customer.wallet, incomingPaymentUrl: r.incomingPaymentUrl });
         r.status = "quoted";
         r.approval = issueChallenge(subjectOf(r));
       } catch (e) {
@@ -719,7 +731,7 @@ export async function approveRequest(
 async function payUnderCap(customer: Customer, r: PaymentRequest): Promise<PaymentRequest> {
   const cap = customer.cap!;
   const secrets = JSON.parse(open(cap.sealed)) as CapSecrets;
-  const g = gateway("wallet");
+  const g = gatewayFor("wallet", customer.wallet.id);
 
   const rotate = async () => {
     const t = await g.rotateToken({ manageUrl: secrets.manageUrl, accessToken: secrets.accessToken });
@@ -762,7 +774,7 @@ async function pay(customer: Customer, r: PaymentRequest, accessToken: string): 
   const quote = r.quote!;
   const cap = customer.cap?.status === "active" && r.consentBy === "cap" ? customer.cap : undefined;
   try {
-    const out = await gateway("wallet").createOutgoingPayment({ wallet: customer.wallet, accessToken, quoteId: quote.id, description: `Payment to ${r.merchantName}` });
+    const out = await gatewayFor("wallet", customer.wallet.id).createOutgoingPayment({ wallet: customer.wallet, accessToken, quoteId: quote.id, description: `Payment to ${r.merchantName}` });
     if (out.failed) throw new OpError("unknown", "The wallet marked this payment as failed.");
     const now = Date.now();
     r.status = "paid";
@@ -837,11 +849,11 @@ export async function customerHistory(customer: Customer) {
   return out;
 }
 
-export async function merchantHistory() {
-  const wallet = normalizeWalletUrl(merchantWalletUrl());
+export async function merchantHistory(onlyCustomerId?: string) {
+  const wallet = normalizeWalletUrl(onlyCustomerId ? `${MOCK_HOST}/mama-chidi-shop` : merchantWalletUrl());
   const customers = await store().list<Customer>("customers");
   const mine = (await store().list<PaymentRequest>("requests"))
-    .filter((r) => normalizeWalletUrl(r.merchantWalletId) === wallet)
+    .filter((r) => normalizeWalletUrl(r.merchantWalletId) === wallet && (!onlyCustomerId || r.customerId === onlyCustomerId))
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     .slice(0, HISTORY_LIMIT);
   return mine.map((r) => {

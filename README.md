@@ -103,6 +103,8 @@ Code: `src/lib/op/real.ts` (the SDK calls), `src/lib/domain.ts` (the journey), `
 | Hosted URL and deployed storage | yes (Vercel and Supabase) |  |  |
 
 ## Try it (judges)
+**One-device judge demo (simulated wallet):** open https://payalone.vercel.app/demo. A customer with a ₦50,000 weekly limit and a seller appear side by side on one device, no setup. This runs on the SIMULATED wallet with play money, never the real Interledger test wallet. Voice is locked until you add your own ElevenLabs key (spoken read-back and spoken answers) or are approved as a judge (live conversation, hard caps). Details: [`docs/JUDGE_DEMO.md`](docs/JUDGE_DEMO.md).
+
 **Hosted, real test wallet:** open https://payalone.vercel.app/merchant (seller) on one device and https://payalone.vercel.app/wallet (customer) on another, for example a laptop and a phone or tablet.
 1. Customer: set up the device (the customer wallet address is filled in). Note the six-digit pay code.
 2. Seller: type the pay code and an amount such as 0.01, and send.

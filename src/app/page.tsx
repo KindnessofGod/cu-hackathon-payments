@@ -15,6 +15,12 @@ export default function Home() {
           </p>
         </section>
 
+        <Link href="/demo" className="card role-card" style={{ borderColor: "var(--brand)", marginBottom: "1rem" }}>
+          <h2 style={{ marginTop: 0 }}>Judges: try it on one device</h2>
+          <p className="muted">A customer and a seller side by side, a limit already set, no setup. Simulated wallet, play money.</p>
+          <span className="button wide">Open the one-device demo</span>
+        </Link>
+
         <div className="grid-2">
           <Link href="/wallet" className="card role-card">
             <span className="card-icon">

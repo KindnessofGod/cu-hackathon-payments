@@ -4,6 +4,7 @@ import { currentCustomer } from "./http";
 import { DomainError } from "./domain";
 import { isSimulated } from "./op";
 import { sha256, sign } from "./secret";
+import { DEMO_SELLER_COOKIE, demoSellerFromCookie } from "./demo";
 
 // The merchant side (asking for payments, seeing recent customers) and the studio screen are locked with
 // one key, MERCHANT_KEY, set on the server. A device enters it once and keeps a signed cookie. Without
@@ -55,4 +56,19 @@ function stageKeyOk(typed: string | null): boolean {
 export async function stageChannel(stageKey: string | null = null): Promise<string | null> {
   if (!stageKeyOk(stageKey) && !(await isMerchant()) && !(await currentCustomer())) return null;
   return `live-${sign(`stage:${configuredKey() ?? "sim"}`).slice(0, 24)}`;
+}
+
+/** Who is using the seller page: the real seller (merchant key) or a judge's simulated seller, tied to one demo customer. */
+export type SellerScope = { kind: "merchant" } | { kind: "demo"; customerId: string };
+
+export async function sellerScope(): Promise<SellerScope | null> {
+  if (await isMerchant()) return { kind: "merchant" };
+  const id = await demoSellerFromCookie((await cookies()).get(DEMO_SELLER_COOKIE)?.value);
+  return id ? { kind: "demo", customerId: id } : null;
+}
+
+export async function requireSeller(): Promise<SellerScope> {
+  const s = await sellerScope();
+  if (!s) throw new DomainError("not_allowed", "Enter the merchant key to use this page.");
+  return s;
 }

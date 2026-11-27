@@ -1,9 +1,9 @@
 import { body, fail, ok } from "@/lib/http";
 import { DomainError } from "@/lib/domain";
-import { MERCHANT_COOKIE, isMerchant, merchantLogin } from "@/lib/merchantAuth";
+import { MERCHANT_COOKIE, merchantLogin, sellerScope } from "@/lib/merchantAuth";
 
 export async function GET() {
-  return ok({ merchant: await isMerchant() });
+  return ok({ merchant: Boolean(await sellerScope()) });
 }
 
 export async function POST(req: Request) {

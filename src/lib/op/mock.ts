@@ -47,7 +47,9 @@ const token = () => randomBytes(18).toString("base64url");
 
 export class MockGateway implements PaymentsGateway {
   readonly simulated = true;
-  private store = getStore();
+  private get store() {
+    return getStore();
+  }
 
   async getWallet(url: string): Promise<WalletInfo> {
     const clean = url.trim().replace(/\/+$/, "");
