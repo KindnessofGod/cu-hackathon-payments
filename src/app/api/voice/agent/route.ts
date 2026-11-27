@@ -86,8 +86,8 @@ export async function GET(req: Request) {
     // The conversation before the app reloaded (the wallet's page for a new limit ends the call):
     // the last lines of this customer's latest call in the past 20 minutes, so the agent can carry on.
     type Line = { at: string; who: "you" | "app" | "tool"; text: string };
-    const convs = (await getStore().list<{ customerId: string; updatedAt: string; lines: Line[] }>("conversations"))
-      .filter((c) => c.customerId === customer.id && Date.now() - Date.parse(c.updatedAt) < 20 * 60_000)
+    const convs = (await getStore().listBy<{ customerId: string; updatedAt: string; lines: Line[] }>("conversations", "customerId", customer.id))
+      .filter((c) => Date.now() - Date.parse(c.updatedAt) < 20 * 60_000)
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
     const recentChat = convs[0]
       ? convs[0].lines

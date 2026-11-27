@@ -14,6 +14,14 @@ export class MemoryStore implements Store {
     this.data.get(c)?.delete(id);
   }
   async list<T>(c: string) {
-    return [...(this.data.get(c)?.values() ?? [])].map((d) => structuredClone(d) as T);
+    const rows = [...(this.data.get(c)?.values() ?? [])];
+    this.reads += rows.length;
+    return rows.map((d) => structuredClone(d) as T);
+  }
+  reads = 0; // documents handed out, so tests can check a poll stays small
+  async listBy<T>(c: string, field: string, value: string) {
+    const rows = ([...(this.data.get(c)?.values() ?? [])] as Record<string, unknown>[]).filter((d) => d[field] === value);
+    this.reads += rows.length;
+    return rows.map((d) => structuredClone(d) as T);
   }
 }
