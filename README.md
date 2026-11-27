@@ -9,6 +9,18 @@ CU Next Gen Hackathon 2026, Track 2: Inclusive Payments and Financial Access. Bu
 
 Hosted: https://payalone.vercel.app (seller: `/merchant`, customer: `/wallet`).
 
+<p align="center"><img src="docs/img/home.png" alt="Pay Alone home screen: I am paying, I am selling" width="760"></p>
+
+*The live home screen at payalone.vercel.app (screenshot taken 27 Nov 2026). The seller page asks for a merchant key, and the customer page starts with device setup, so only the home screen is shown here.*
+
+## Two ways to approve a payment
+<p align="center"><img src="docs/img/two-approval-paths.svg" alt="Diagram: path 1 is the app with fingerprint approval; path 2 is a phone call from any phone with a keypad PIN that is never spoken" width="900"></p>
+
+1. **App with fingerprint approval (the original idea).** Built in this repo and live on the hosted demo, on the Interledger test wallet or the SIMULATED wallet.
+2. **Phone call from any phone, keypad PIN never spoken.** A separate prototype, not part of this hosted demo.
+
+In both, the AI never approves, pays or confirms money. Voice is only the interface. The diagram is a drawing of the design, not a screenshot. No real money moves.
+
 ## The problem
 Blind, elderly and non-reading Nigerians often cannot use their own money alone. Banks refuse cards, and apps and ATMs do not talk, so they hand a card and PIN to a helper. Helpers sometimes steal. See `docs/PITCH_EVIDENCE.md`.
 

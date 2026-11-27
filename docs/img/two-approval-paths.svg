@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 560" font-family="Helvetica, Arial, sans-serif">
+<rect width="960" height="560" fill="#f4f8f4"/>
+<text x="480" y="38" text-anchor="middle" font-size="24" font-weight="700" fill="#0f2a1f">Pay Alone: two ways to approve, one rule</text>
+<text x="480" y="62" text-anchor="middle" font-size="14" fill="#44584d">The AI never approves, pays or confirms money. Test money only.</text>
+<!-- shared top -->
+<rect x="300" y="82" width="360" height="54" rx="12" fill="#fff" stroke="#0f7a55" stroke-width="2"/>
+<text x="480" y="106" text-anchor="middle" font-size="15" font-weight="700" fill="#0f2a1f">Seller asks for an amount</text>
+<text x="480" y="125" text-anchor="middle" font-size="12" fill="#44584d">The wallet's quote sets the exact amount</text>
+<line x1="400" y1="136" x2="240" y2="180" stroke="#0f7a55" stroke-width="2"/>
+<line x1="560" y1="136" x2="720" y2="180" stroke="#5b47c4" stroke-width="2"/>
+<!-- path 1 -->
+<rect x="40" y="180" width="400" height="290" rx="16" fill="#fff" stroke="#0f7a55" stroke-width="2"/>
+<text x="240" y="210" text-anchor="middle" font-size="17" font-weight="700" fill="#0f7a55">1. App + fingerprint (the original idea)</text>
+<text x="240" y="230" text-anchor="middle" font-size="12" fill="#44584d">Built: this repo, hosted demo</text>
+<g font-size="13" fill="#0f2a1f" text-anchor="middle">
+<rect x="70" y="248" width="340" height="34" rx="8" fill="#e6f3ec"/><text x="240" y="270">Phone reads the request and exact amount aloud</text>
+<rect x="70" y="296" width="340" height="34" rx="8" fill="#e6f3ec"/><text x="240" y="318">Person approves with their fingerprint (passkey)</text>
+<rect x="70" y="344" width="340" height="34" rx="8" fill="#e6f3ec"/><text x="240" y="366">Server checks the approval for that one quote</text>
+<rect x="70" y="392" width="340" height="34" rx="8" fill="#e6f3ec"/><text x="240" y="414">Wallet pays, or refuses anything over the limit</text>
+</g>
+<text x="240" y="450" text-anchor="middle" font-size="11" fill="#44584d">A tap alone is refused once a fingerprint is set up</text>
+<!-- path 2 -->
+<rect x="520" y="180" width="400" height="290" rx="16" fill="#fff" stroke="#5b47c4" stroke-width="2"/>
+<text x="720" y="210" text-anchor="middle" font-size="17" font-weight="700" fill="#5b47c4">2. Phone call from any phone</text>
+<text x="720" y="230" text-anchor="middle" font-size="12" fill="#44584d">Separate prototype, not in this hosted demo</text>
+<g font-size="13" fill="#0f2a1f" text-anchor="middle">
+<rect x="550" y="248" width="340" height="34" rx="8" fill="#eeeafb"/><text x="720" y="270">Person calls; a voice reads the amount</text>
+<rect x="550" y="296" width="340" height="34" rx="8" fill="#eeeafb"/><text x="720" y="318">Person types their PIN on the keypad</text>
+<rect x="550" y="344" width="340" height="34" rx="8" fill="#eeeafb"/><text x="720" y="366">The PIN is never spoken aloud</text>
+<rect x="550" y="392" width="340" height="34" rx="8" fill="#eeeafb"/><text x="720" y="414">Plain code checks the PIN, then pays (test rail)</text>
+</g>
+<text x="720" y="450" text-anchor="middle" font-size="11" fill="#44584d">Works on any phone, no smartphone or internet needed</text>
+<rect x="40" y="488" width="880" height="48" rx="12" fill="#0f2a1f"/>
+<text x="480" y="509" text-anchor="middle" font-size="14" font-weight="700" fill="#fff">Voice is only the interface. Only the fingerprint or the keypad PIN approves.</text>
+<text x="480" y="527" text-anchor="middle" font-size="12" fill="#cfe5d9">Payments are on the Interledger test wallet or SIMULATED. No real money moves.</text>
+</svg>
