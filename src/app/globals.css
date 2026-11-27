@@ -1,16 +1,16 @@
 /* Pay Alone: high contrast, large text, large targets. Status is never shown by colour alone. */
 :root {
   /* Bright and calm: fresh mint paper, deep forest ink, emerald actions, a lime accent on dark. */
-  --ink: #0c2a21;
-  --ink-2: #4b5f57;
+  --ink: #0d1f19;
+  --ink-2: #44564e;
   --paper: #ffffff;
-  --bg: #f1f6ee;
-  --line: #e0e9e3;
-  --line-strong: #9aaba2;
+  --bg: #f6f3ec;
+  --line: #e2dccd;
+  --line-strong: #8a948d;
   --brand: #0e7a55;
   --brand-strong: #0a5c40;
   --brand-ink: #ffffff;
-  --brand-soft: #e2f3e9;
+  --brand-soft: #e6efd9;
   --deep: #0f3b30;
   --lime: #c3e88f;
   --lime-soft: #eef9d9;
@@ -100,8 +100,8 @@ input:focus, select:focus { border-color: var(--brand); }
 button, .button {
   font: inherit; font-size: 1.1rem; font-weight: 800;
   min-height: 3.5rem; padding: 0.8rem 1.25rem; margin: 0.35rem 0;
-  border: 2px solid var(--brand); border-radius: 16px;
-  background: var(--brand); color: var(--brand-ink); cursor: pointer;
+  border: 2px solid var(--ink); border-radius: 16px;
+  background: var(--ink); color: var(--brand-ink); cursor: pointer;
   display: inline-flex; align-items: center; justify-content: center; gap: 0.6rem; text-decoration: none; text-align: center;
   transition: transform 0.05s ease, filter 0.15s ease;
 }
@@ -523,3 +523,20 @@ video.scan { width: 100%; border-radius: 16px; border: 2px solid var(--line); ba
   .demo-stage[data-tab="customer"] .demo-pane.seller,
   .demo-stage[data-tab="seller"] .demo-pane.customer { display: none; }
 }
+
+/* ---------- Direction A: editorial. Warm paper, serif display type, pill buttons. Overrides the tokens above. ---------- */
+body { background-image: none; background-color: var(--bg); }
+h1, h2, .welcome, .amount { font-family: var(--font-serif), Georgia, serif; font-weight: 400; }
+h1 { font-size: 2.8rem; line-height: 1; letter-spacing: -0.03em; }
+h2 { font-size: 1.7rem; letter-spacing: -0.02em; }
+.card { border-radius: 28px; box-shadow: none; border-color: var(--line); }
+button, .button { border-radius: 999px; font-weight: 600; }
+button.secondary, .button.secondary { background: transparent; border: 1.5px solid var(--ink); color: var(--ink); box-shadow: none; }
+button.secondary:hover:not(:disabled) { background: var(--brand-soft); }
+.eyebrow { background: var(--brand-soft); color: #2a4a12; }
+.brand-mark { background: var(--ink); }
+.appbar { background: var(--bg); border-bottom: 1px solid var(--line); }
+.steps li { border-radius: 24px; }
+.banner { background: var(--brand-soft); }
+.demo-pane { border-radius: 28px; }
+@media (min-width: 52rem) { .steps.demo-steps { grid-template-columns: repeat(3, 1fr); } }
