@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "Pay Alone",
-  description: "Money on your own terms for people who can't see a screen or read, starting with payments they approve alone. Built on Open Payments.",
+  description: "The voice payment app that gives people who are blind, elderly or can't read financial autonomy. Built on Open Payments.",
   appleWebApp: { capable: true, title: "Pay Alone", statusBarStyle: "default" },
 };
 
