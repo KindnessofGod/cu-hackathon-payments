@@ -17,6 +17,7 @@ import { canWake, startWake } from "@/lib/wake";
 import { createAvatar } from "@dicebear/core";
 import * as openPeeps from "@dicebear/open-peeps";
 import "./dashboard.css";
+import "./wallet-v5.css";
 
 const HELP_TEXT = "You can ask: who is this, how much is left, or say again. To pay, say pay. To refuse, say no.";
 

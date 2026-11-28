@@ -14,11 +14,7 @@
   padding: 1.1rem;
   font-family: var(--font-sans), system-ui, sans-serif;
   color: var(--ink);
-  background:
-    radial-gradient(40rem 26rem at 18% -8%, rgba(195, 232, 143, 0.55), transparent 70%),
-    radial-gradient(34rem 30rem at 70% 108%, rgba(127, 220, 190, 0.35), transparent 70%),
-    linear-gradient(118deg, transparent 0 30%, rgba(255, 255, 255, 0.6) 30% 41%, transparent 41% 58%, rgba(255, 255, 255, 0.4) 58% 66%, transparent 66%),
-    linear-gradient(180deg, #e9f2e4, #f5f9f2);
+  background: #f6f3ec;
   overflow: hidden;
 }
 .dash .peep { display: block; border-radius: 50%; }
@@ -37,7 +33,7 @@
 .board { display: grid; gap: 0.9rem; align-content: start; overflow-y: auto; padding-right: 0.2rem; }
 .board-top { display: flex; justify-content: space-between; align-items: flex-start; padding: 0.4rem 0.3rem 0; }
 .dash .hi { margin: 0; color: var(--ink-2); font-size: 1rem; }
-.dash .welcome { margin: 0.1rem 0 0.25rem; font-size: 2.4rem; font-weight: 400; letter-spacing: -0.035em; color: var(--deep); line-height: 1.05; }
+.dash .welcome { margin: 0.1rem 0 0.25rem; font-size: 2.4rem; font-family: var(--font-serif), Georgia, serif; font-weight: 400; letter-spacing: -0.03em; color: var(--deep); line-height: 1.05; }
 .dash .sub { margin: 0; color: var(--ink-2); font-size: 0.92rem; }
 .top-actions { display: flex; gap: 0.6rem; align-items: center; }
 .chip-soft { display: inline-flex; align-items: center; gap: 0.45rem; padding: 0.55rem 0.95rem; border-radius: 999px; background: rgba(255, 255, 255, 0.8); font-size: 0.85rem; font-weight: 500; box-shadow: 0 6px 18px rgba(15, 59, 48, 0.06); }
@@ -49,7 +45,7 @@
 .row-1 { display: grid; grid-template-columns: 1.15fr 1fr; gap: 1rem; }
 .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
 .row-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
-.dash .card { background: rgba(255, 255, 255, 0.82); border: 1px solid rgba(255, 255, 255, 0.95); border-radius: 1.7rem; padding: 1.1rem 1.2rem; box-shadow: 0 10px 30px rgba(15, 59, 48, 0.06); backdrop-filter: blur(8px); }
+.dash .card { background: #fff; border: 1px solid #e2dccd; border-radius: 1.7rem; padding: 1.1rem 1.2rem; box-shadow: none; }
 
 /* Stacked wallet card */
 .dash .wallet-stack { position: relative; border-radius: 1.9rem; padding: 0.5rem; background: var(--deep); box-shadow: 0 22px 50px rgba(15, 59, 48, 0.25); }

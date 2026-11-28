@@ -1,10 +1,12 @@
 import type { Metadata, Viewport } from "next";
 import { isSimulated } from "@/lib/op";
 import { currentCustomer } from "@/lib/http";
-import { Outfit } from "next/font/google";
+import { Inter, Instrument_Serif } from "next/font/google";
 import "./globals.css";
+import "./app-v5.css";
 
-const sans = Outfit({ subsets: ["latin"], variable: "--font-sans", display: "swap" });
+const sans = Inter({ subsets: ["latin"], variable: "--font-sans", display: "swap" });
+const serif = Instrument_Serif({ subsets: ["latin"], weight: "400", style: ["normal", "italic"], variable: "--font-serif", display: "swap" });
 
 export const dynamic = "force-dynamic";
 
@@ -14,12 +16,12 @@ export const metadata: Metadata = {
   appleWebApp: { capable: true, title: "Pay Alone", statusBarStyle: "default" },
 };
 
-export const viewport: Viewport = { width: "device-width", initialScale: 1, themeColor: "#f3f8f4" };
+export const viewport: Viewport = { width: "device-width", initialScale: 1, themeColor: "#f6f3ec" };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const demo = !isSimulated() && Boolean((await currentCustomer().catch(() => null))?.demo);
   return (
-    <html lang="en" className={sans.variable}>
+    <html lang="en" className={`${sans.variable} ${serif.variable}`}>
       <body className={isSimulated() ? "simulated" : undefined}>
         {isSimulated() && (
           <div className="banner" role="note">
