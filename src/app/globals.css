@@ -557,7 +557,7 @@ input:focus, select:focus { border-color: var(--ink); box-shadow: 0 0 0 4px rgba
 
 /* demo: each app sits in a phone-style frame with a label */
 .demo-col { display: grid; gap: 0.7rem; align-content: start; }
-.demo-label { display: inline-flex; align-items: center; gap: 0.5rem; justify-self: start; font-size: 0.82rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; padding: 0.45rem 0.9rem; border-radius: 999px; }
+.demo-label { display: inline-flex; align-items: center; gap: 0.5rem; justify-self: start; font-size: 0.9rem; font-weight: 600; letter-spacing: 0; padding: 0.45rem 0.9rem; border-radius: 999px; }
 .demo-label.customer { background: var(--brand-soft); color: #2a4a12; }
 .demo-label.seller { background: var(--seller-soft); color: var(--seller); }
 .demo-pane { border: 0.7rem solid var(--ink); border-radius: 2.6rem; box-shadow: 0 50px 80px -30px rgba(13, 31, 25, 0.45); background: var(--bg); }

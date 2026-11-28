@@ -1,22 +1,13 @@
 import Image from "next/image";
 import Link from "next/link";
 import { Icon } from "@/components/ui";
-import { Scene } from "@/components/landing/Scene";
 import { HowItWorks } from "@/components/landing/HowItWorks";
 import { Reveal } from "@/components/landing/Reveal";
-import { InkStatement, FingerArt, CallPhone, Boundary, LimitDial, Countdown, Tilt } from "@/components/landing/Art";
+import { InkStatement, FingerArt, CallPhone, LimitDial } from "@/components/landing/Art";
 import "./landing.css";
 import "./landing-sections.css";
 
 const CONTACT = "mailto:kindness@ikangrowthenterprise.com.ng";
-const PROMISES = [
-  { icon: "person", t: "No helper", s: "You do it alone" },
-  { icon: "mic", t: "No spoken PIN", s: "Keypad or fingerprint" },
-  { icon: "speaker", t: "AI never approves", s: "It only reads and listens" },
-  { icon: "shield", t: "Wallet enforces the limit", s: "Not our server" },
-  { icon: "clock", t: "Doing nothing means no", s: "Silence never pays" },
-] as const;
-
 const STATUS: { k: string; h: string; items: [string, string][] }[] = [
   {
     k: "real",
@@ -35,7 +26,16 @@ const STATUS: { k: string; h: string; items: [string, string][] }[] = [
       ["Live voice in English, Pidgin, Yoruba, Hausa, Igbo", "Built, still testing. Wording not yet checked by native speakers."],
     ],
   },
-  { k: "plan", h: "Planned", items: [["Screen-reader testing", "Not yet done with VoiceOver or TalkBack users."]] },
+  {
+    k: "plan",
+    h: "Next · not built yet",
+    items: [
+      ["Screen-reader testing", "Not yet done with VoiceOver or TalkBack users."],
+      ["Airtime, data and bills", "The same voice and the same approval."],
+      ["Subscriptions and shopping online", "Pay any merchant, approved only by you."],
+      ["More countries and currencies", "Nigeria first. Then the world."],
+    ],
+  },
 ];
 
 export default function Home() {
@@ -50,12 +50,11 @@ export default function Home() {
           </span>
           <nav className="links" aria-label="Main">
             <a href="#how">How it works</a>
-            <a href="#two-ways">Two ways to approve</a>
+            <a href="#two-ways">Approval</a>
             <a href="#safety">Safety</a>
-            <a href="#status">What is real</a>
+            <a href="#status">What works</a>
           </nav>
           <div className="nav-actions">
-            <Link href="/demo#voice-h" className="button secondary ghost">Request judge access</Link>
             <Link href="/demo" className="button">Try the demo</Link>
           </div>
         </div>
@@ -63,46 +62,30 @@ export default function Home() {
 
       <main id="main" style={{ maxWidth: "none", padding: 0 }}>
         <section className="lp-hero" aria-labelledby="h">
-          <div className="blob b1" aria-hidden="true" /><div className="blob b2" aria-hidden="true" />
-          <div className="lp-wrap hero-grid">
-            <div className="hero-copy">
-              <span className="lp-pill"><i aria-hidden="true" /> Test network · play money · built on Open Payments</span>
-              <h1 id="h">
-                <span className="line"><span>Pay alone.</span></span>
-                <span className="line"><span><em>Without a helper.</em></span></span>
-              </h1>
-              <p className="lead">
-                A wallet for people who are blind, elderly or cannot read. Every request is spoken aloud with the exact amount. Only you can approve it.
-              </p>
-              <div className="lp-cta">
-                <Link href="/demo" className="button">Try the one-device demo <Icon name="back" size={20} className="flip" /></Link>
-                <a href="#how" className="button secondary">See how it works</a>
-              </div>
-              <ul className="hero-proof">
-                <li>Fingerprint in the app</li>
-                <li>Keypad PIN on a call</li>
-                <li>Never a spoken PIN</li>
-              </ul>
-            </div>
-            <div className="hero-art">
-              <Scene auto />
-              <div className="chip-float c1" aria-hidden="true"><Icon name="speaker" size={18} /> Voice only reads and listens</div>
-              <div className="chip-float c2" aria-hidden="true"><Icon name="shield" size={18} /> The wallet enforces your limit</div>
+          <div className="lp-wrap hero-center">
+            <span className="lp-pill">Test network · play money · built on Open Payments</span>
+            <h1 id="h">
+              Pay alone.<br />
+              <em>Without a helper.</em>
+            </h1>
+            <p className="lead">
+              Money on your own terms, for people anywhere who can&apos;t see a screen or read. It starts with payments: every request is spoken aloud with the exact amount, and only you can approve it.
+            </p>
+            <div className="lp-cta">
+              <Link href="/demo" className="button">Try the demo</Link>
+              <a href="#how" className="button secondary">See how it works</a>
             </div>
           </div>
-          <p className="lp-caption">Animation is illustrative. Names and amounts are examples, play money.</p>
-        </section>
-
-        <section className="promises" aria-label="Five promises">
-          <ul className="lp-wrap promise-row">
-            {PROMISES.map((p, i) => (
-              <li key={p.t} style={{ ["--i" as string]: i }}>
-                <span className="pr-ic"><Icon name={p.icon} size={22} /></span>
-                <b>{p.t}</b>
-                <span>{p.s}</span>
-              </li>
-            ))}
-          </ul>
+          <div className="hero-shots">
+            <div className="hero-glow" aria-hidden="true" />
+            <div className="phone phone-a">
+              <Image src="/screens/customer-app-v6.webp" width={780} height={1538} priority alt="The customer app: money left to spend this week, with Say it aloud and Talk buttons." />
+            </div>
+            <div className="phone phone-b">
+              <Image src="/screens/seller-app-v6.webp" width={780} height={1538} priority alt="The seller app: enter the six-digit pay code and an amount, then request payment." />
+            </div>
+          </div>
+          <p className="lp-caption">Screens from the demo. Play money.</p>
         </section>
 
         <section className="lp-sec problem" aria-labelledby="problem-h">
@@ -111,8 +94,9 @@ export default function Home() {
               <p className="kicker">The problem</p>
               <InkStatement id="problem-h" text="The helper was always the risk." accent={["always"]} />
               <p className="sub">
-                People who cannot see a screen or read numbers often hand over a card and say the PIN aloud to someone else. Pay Alone takes the helper out of the loop.
+                Around the world, 2.2 billion people live with a vision impairment and 739 million adults lack basic literacy. Many hand over a card and say the PIN aloud so someone else can pay. Pay Alone takes the helper out of the loop.
               </p>
+              <p className="src-note">Sources: World Health Organization, World report on vision; UNESCO, 2024.</p>
             </div>
             <ul className="risks" aria-label="What can go wrong with a helper">
               <li className="r1"><span className="risk-n">A</span><b>A swapped card</b><span>Handed over at a counter or an ATM, and a different card comes back.</span></li>
@@ -170,9 +154,8 @@ export default function Home() {
             <div className="sec-head center">
               <p className="kicker">Safety</p>
               <h2 id="safe-h">The AI never moves <em>your money.</em></h2>
-              <p className="sub">There is a hard line between what the voice can do and what only you and your wallet can do. Nothing crosses it.</p>
+              <p className="sub">The voice reads and listens. Only you can approve a payment, and your wallet enforces your limit.</p>
             </div>
-            <Boundary />
             <div className="bento2">
               <Reveal className="bt limit">
                 <p className="lbl">Weekly limit · example</p>
@@ -181,7 +164,7 @@ export default function Home() {
                 <p>You set it once on your own wallet&apos;s page. The wallet, not our server, refuses anything above it.</p>
               </Reveal>
               <Reveal delay={100} className="bt nothing">
-                <Countdown />
+                <span className="nothing-ic" aria-hidden="true"><Icon name="clock" size={30} /></span>
                 <h3>Doing nothing means no.</h3>
                 <p>The whole screen is one button. If you do not approve, nothing is paid.</p>
               </Reveal>
@@ -194,31 +177,6 @@ export default function Home() {
           </div>
         </section>
 
-        <section className="lp-sec product" aria-labelledby="real-h">
-          <div className="lp-wrap">
-            <div className="sec-head split-head">
-              <div>
-                <p className="kicker">The product</p>
-                <h2 id="real-h">One app to pay. <em>One to get paid.</em></h2>
-              </div>
-              <p className="sub">Both run in a browser. The customer app is built for listening first; the seller app is built for speed at a busy counter.</p>
-            </div>
-            <Tilt className="stage-shots">
-              <figure className="dev dev-a">
-                <div className="dev-screen"><Image src="/screens/customer-app.webp" width={780} height={1538} alt="The customer app: money left to spend this week, with Say it aloud and Talk buttons." /></div>
-                <figcaption><b>Customer</b> hears each request and approves it alone.</figcaption>
-              </figure>
-              <figure className="dev dev-b">
-                <div className="dev-screen"><Image src="/screens/seller-app.webp" width={780} height={1538} alt="The seller app: enter the six-digit pay code and an amount, then request payment." /></div>
-                <figcaption><b>Seller</b> enters a pay code and asks for an amount.</figcaption>
-              </figure>
-              <span className="callout k1" aria-hidden="true"><i />Every amount comes from the wallet&apos;s quote</span>
-              <span className="callout k2" aria-hidden="true"><i />A pay code cannot take money</span>
-            </Tilt>
-            <p className="lp-caption">Screens from the simulated demo, play money.</p>
-          </div>
-        </section>
-
         <section className="lp-sec status-sec" id="status" aria-labelledby="status-h">
           <div className="lp-wrap">
             <div className="sec-head split-head">
@@ -226,7 +184,7 @@ export default function Home() {
                 <p className="kicker">Honesty</p>
                 <h2 id="status-h">What is real <em>today.</em></h2>
               </div>
-              <p className="sub">Pay Alone is an early prototype built by one person. Here is exactly what works, and what does not yet.</p>
+              <p className="sub">An early prototype built by one person, starting in Nigeria. Here is what works, and what comes next.</p>
             </div>
             <div className="board3">
               {STATUS.map((col) => (
@@ -245,9 +203,9 @@ export default function Home() {
           <div className="lp-wrap">
             <div className="finale-card">
               <div className="finale-glow" aria-hidden="true" />
-              <p className="kicker">Try it</p>
+              <p className="kicker">Nigeria first. Then the world.</p>
               <h2 id="c">See it for <em>yourself.</em></h2>
-              <p>Try the demo in under a minute, or request judge access to unlock live voice. Want a live walkthrough? Email us.</p>
+              <p>Try the demo in about a minute, or request judge access to unlock live voice.</p>
               <div className="lp-cta">
                 <Link href="/demo" className="button lime">Open the demo <Icon name="back" size={20} className="flip" /></Link>
                 <Link href="/demo#voice-h" className="button secondary on-dark">Request judge access</Link>
@@ -256,12 +214,11 @@ export default function Home() {
           </div>
           <footer className="lp-footer2">
             <div className="lp-wrap">
-              <p className="wordmark-xl" aria-hidden="true">Pay alone.</p>
               <div className="foot-row">
                 <span>© 2026 iKan Growth Enterprise. Pay Alone.</span>
                 <nav aria-label="Footer"><Link href="/wallet">Customer app</Link><Link href="/merchant">Seller app</Link><Link href="/demo">Demo</Link><a href={CONTACT}>Contact</a></nav>
               </div>
-              <p className="foot-note">Interledger test network, play money. Built on Open Payments. The voice assistant never approves, pays or confirms money.</p>
+              <p className="foot-note">Interledger test network, play money. The AI never approves, pays or confirms money.</p>
             </div>
           </footer>
         </section>

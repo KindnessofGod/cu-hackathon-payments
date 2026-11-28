@@ -1,7 +1,7 @@
 "use client";
 // Decorative, illustrative art for the landing page. Every piece is aria-hidden or carries its own text;
 // nothing here is a recording of the real app, and no real money moves. With Reduce Motion on, it all holds still.
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 
 function useReduced() {
   const [r, setR] = useState(false);
@@ -118,39 +118,6 @@ export function CallPhone() {
   );
 }
 
-/** The boundary diagram: the voice side sends requests toward a wall; only you and the wallet are on the other side. */
-export function Boundary() {
-  const [ref, seen] = useSeen<HTMLDivElement>();
-  return (
-    <div ref={ref} className={`boundary${seen ? " go" : ""}`}>
-      <div className="bd-side ai">
-        <p className="bd-kicker">The voice assistant can</p>
-        <ul>
-          <li>Listen to you</li>
-          <li>Read every request aloud</li>
-          <li>Answer “how much is left?”</li>
-          <li>Open the approval prompt</li>
-        </ul>
-        <span className="bd-packets" aria-hidden="true"><i /><i /><i /></span>
-      </div>
-      <div className="bd-wall" aria-hidden="true">
-        <span className="bd-lock">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V8a4 4 0 018 0v3" /></svg>
-        </span>
-      </div>
-      <div className="bd-side you">
-        <p className="bd-kicker">Only you and your wallet can</p>
-        <ul>
-          <li>Approve, with fingerprint or keypad PIN</li>
-          <li>Set the amount, from the wallet&apos;s quote</li>
-          <li>Refuse anything over your limit</li>
-          <li>Stop everything</li>
-        </ul>
-      </div>
-    </div>
-  );
-}
-
 /** A half-circle gauge for the weekly limit example. */
 export function LimitDial() {
   const [ref, seen] = useSeen<HTMLDivElement>();
@@ -169,35 +136,3 @@ export function LimitDial() {
   );
 }
 
-/** A ring that runs out: if you do nothing, the answer is no. */
-export function Countdown() {
-  return (
-    <div className="countdown" aria-hidden="true">
-      <svg viewBox="0 0 120 120"><circle cx="60" cy="60" r="52" pathLength={1} className="cd-track" /><circle cx="60" cy="60" r="52" pathLength={1} className="cd-run" /></svg>
-      <span className="cd-label">No</span>
-    </div>
-  );
-}
-
-export function Tilt({ children, className = "" }: { children: ReactNode; className?: string }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const reduced = useReduced();
-  useEffect(() => {
-    if (reduced) return;
-    let raf = 0;
-    const on = () => {
-      cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(() => {
-        const el = ref.current;
-        if (!el) return;
-        const r = el.getBoundingClientRect();
-        const t = Math.min(1, Math.max(-1, (r.top + r.height / 2 - window.innerHeight / 2) / window.innerHeight));
-        el.style.setProperty("--t", t.toFixed(3));
-      });
-    };
-    on();
-    window.addEventListener("scroll", on, { passive: true });
-    return () => { window.removeEventListener("scroll", on); cancelAnimationFrame(raf); };
-  }, [reduced]);
-  return <div ref={ref} className={className}>{children}</div>;
-}

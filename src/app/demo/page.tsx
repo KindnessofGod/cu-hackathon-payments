@@ -97,39 +97,65 @@ export default function DemoPage() {
       <main className="demo5">
         <header className="d5-hero">
           <div>
-            <p className="kick">Judge demo · simulated wallet</p>
-            <h1>Try Pay Alone <em>on this one device.</em></h1>
+            <p className="kick">Simulated wallet · play money</p>
+            <h1>Try it <em>on one device.</em></h1>
             <p className="lead">
-              A customer and a seller, side by side. The customer already has a weekly limit. Ask for a payment as the seller, hear it as the customer, and approve
-              it. Everything here runs on a <strong>simulated</strong> wallet with play money: no real money moves, and the AI never approves or pays.
+              Ask for money as the seller. Hear it and approve it as the customer.
             </p>
           </div>
           <ol className="d5-steps" aria-label="How to try it">
-            <li><span aria-hidden="true">01</span><b>Seller</b> Tap the demo customer, type an amount (try 2000), send the request.</li>
-            <li><span aria-hidden="true">02</span><b>Customer</b> The request appears and is read back with the exact amount. Approve it with a tap, or your fingerprint if you turn it on.</li>
-            <li><span aria-hidden="true">03</span><b>Seller</b> Watch it become &ldquo;received&rdquo;.</li>
+            <li><span aria-hidden="true">01</span><b>Seller</b> Pick the customer, enter 2000, send.</li>
+            <li><span aria-hidden="true">02</span><b>Customer</b> Hear the amount. Approve it.</li>
+            <li><span aria-hidden="true">03</span><b>Seller</b> See it arrive.</li>
           </ol>
         </header>
 
-        <section className="d5-access" aria-labelledby="voice-h">
+        {error && <p role="alert" className="status bad"><span>{error}</span></p>}
+
+        <section className="d5-studio" aria-label="The two apps">
+          <div className="d5-floor" aria-hidden="true" />
+          {!session?.demo ? (
+            <div className="d5-start">
+              <div className="d5-ghosts" aria-hidden="true"><i /><i /></div>
+              <button className="lime-btn" onClick={() => void start()} disabled={busy}>{busy ? "Setting up…" : "Start the demo"}</button>
+              <p>Play money. The customer has a ₦50,000 weekly limit.</p>
+            </div>
+          ) : (
+            <>
+              <div className="d5-bar">
+                <div className="demo-tabs" role="tablist" aria-label="Which side to show on a narrow screen">
+                  <button role="tab" aria-selected={tab === "customer"} className={tab === "customer" ? "" : "secondary"} onClick={() => setTab("customer")}>Customer</button>
+                  <button role="tab" aria-selected={tab === "seller"} className={tab === "seller" ? "seller" : "secondary"} onClick={() => setTab("seller")}>Seller</button>
+                </div>
+                <button className="secondary" style={{ marginLeft: "auto" }} onClick={() => void restart()} disabled={busy}>Start over</button>
+              </div>
+              <div className="demo-stage" data-tab={tab}>
+                <div className="demo-col"><span className="demo-label customer"><Icon name="person" size={18} /> Customer</span><iframe key={`c${frame}`} className="demo-pane customer" title="Customer app" src="/wallet" allow="microphone; autoplay; publickey-credentials-get; publickey-credentials-create" /></div>
+                <div className="demo-col"><span className="demo-label seller"><Icon name="shop" size={18} /> Seller</span><iframe key={`s${frame}`} className="demo-pane seller" title="Seller app" src="/merchant" allow="camera; autoplay" /></div>
+              </div>
+            </>
+          )}
+        </section>
+
+        <section className="d5-access" style={{ marginTop: "1.5rem" }} aria-labelledby="voice-h">
           <div className="d5-access-head">
             <h2 id="voice-h">Voice</h2>
             <p className="muted">
               {voice === "locked"
-                ? "Voice uses paid speech services, so it is locked until you choose one way to unlock it. Touch only works the same."
-                : "Voice is on for this browser."}
+                ? "Optional. The demo works fully by touch."
+                : "Voice is on."}
             </p>
           </div>
           {voice === "judge" && (
             <p className="status good" role="status">
               <span className="status-icon"><Icon name="check" size={18} /></span>
-              <span>Live voice is unlocked for you (judge access{judge?.limits ? `, up to ${judge.limits.agent} live conversations` : ""}).</span>
+              <span>Live voice is on (judge access{judge?.limits ? `, ${judge.limits.agent} conversations` : ""}).</span>
             </p>
           )}
           {voice === "byok" && (
             <p className="status good" role="status">
               <span className="status-icon"><Icon name="check" size={18} /></span>
-              <span>Your own ElevenLabs key is active: the app speaks each request and hears your spoken answer. The live back-and-forth conversation needs judge access.</span>
+              <span>Your ElevenLabs key is on: spoken read-back and answers.</span>
             </p>
           )}
           {voice === "locked" && (
@@ -138,17 +164,17 @@ export default function DemoPage() {
                 <div className="d5-opt on">
                   <span className="d5-opt-ic" aria-hidden="true"><Icon name="finger" size={22} /></span>
                   <b>Touch only</b>
-                  <span>Works now. No setup.</span>
+                  <span>Works now.</span>
                 </div>
                 <button className={`d5-opt${panel === "judge" ? " sel" : ""}`} aria-expanded={panel === "judge"} onClick={() => setPanel(panel === "judge" ? "" : "judge")}>
                   <span className="d5-opt-ic" aria-hidden="true"><Icon name="person" size={22} /></span>
                   <b>Request judge access</b>
-                  <span>Live voice for 24 hours. No key needed.</span>
+                  <span>Live voice, 24 hours.</span>
                 </button>
                 <button className={`d5-opt${panel === "key" ? " sel" : ""}`} aria-expanded={panel === "key"} onClick={() => setPanel(panel === "key" ? "" : "key")}>
                   <span className="d5-opt-ic" aria-hidden="true"><Icon name="speaker" size={22} /></span>
                   <b>Use my own ElevenLabs key</b>
-                  <span>Spoken read-back and answers.</span>
+                  <span>Spoken read-back.</span>
                 </button>
               </div>
               {panel === "key" && <KeyForm onSaved={() => { setPanel(""); void refresh(); }} />}
@@ -159,37 +185,6 @@ export default function DemoPage() {
             <button className="secondary" onClick={async () => { await api("/api/voice/byok", { method: "DELETE" }).catch(() => undefined); void refresh(); }}>Remove my key from this browser</button>
           )}
         </section>
-
-        {error && <p role="alert" className="status bad"><span>{error}</span></p>}
-
-        <section className="d5-studio" aria-label="The two apps">
-          <div className="d5-floor" aria-hidden="true" />
-          {!session?.demo ? (
-            <div className="d5-start">
-              <div className="d5-ghosts" aria-hidden="true"><i /><i /></div>
-              <button className="lime-btn" onClick={() => void start()} disabled={busy}>{busy ? "Setting up…" : "Start the demo"}</button>
-              <p>Creates a simulated customer with a ₦50,000 weekly limit and a simulated seller, on this browser only.</p>
-            </div>
-          ) : (
-            <>
-              <div className="d5-bar">
-                <div className="demo-tabs" role="tablist" aria-label="Which side to show on a narrow screen">
-                  <button role="tab" aria-selected={tab === "customer"} className={tab === "customer" ? "" : "secondary"} onClick={() => setTab("customer")}>Customer</button>
-                  <button role="tab" aria-selected={tab === "seller"} className={tab === "seller" ? "seller" : "secondary"} onClick={() => setTab("seller")}>Seller</button>
-                </div>
-                <span className="d5-live" aria-hidden="true"><i /> Simulated wallet · play money</span>
-                <button className="secondary" onClick={() => void restart()} disabled={busy}>Start over</button>
-              </div>
-              <div className="demo-stage" data-tab={tab}>
-                <div className="demo-col"><span className="demo-label customer"><Icon name="person" size={18} /> Customer · hears and approves</span><iframe key={`c${frame}`} className="demo-pane customer" title="Customer app" src="/wallet" allow="microphone; autoplay; publickey-credentials-get; publickey-credentials-create" /></div>
-                <div className="demo-col"><span className="demo-label seller"><Icon name="shop" size={18} /> Seller · asks for payment</span><iframe key={`s${frame}`} className="demo-pane seller" title="Seller app" src="/merchant" allow="camera; autoplay" /></div>
-              </div>
-            </>
-          )}
-        </section>
-        <p className="muted" style={{ marginTop: "1.5rem" }}>
-          Simulated wallet, play money. The real Interledger test-wallet version is the same app: sign in on the customer side with your own test wallet address instead.
-        </p>
       </main>
     </>
   );
@@ -218,8 +213,7 @@ function KeyForm({ onSaved }: { onSaved: () => void }) {
       <label htmlFor="elkey">Your ElevenLabs API key</label>
       <input id="elkey" type="password" autoComplete="off" spellCheck={false} value={key} onChange={(e) => setKey(e.target.value)} required />
       <p className="muted" style={{ margin: 0 }}>
-        The key is checked once with ElevenLabs, then kept only in an encrypted cookie in this browser until you close it. Our server forwards each speech request to ElevenLabs with it and never stores or logs it.
-        A restricted key (text to speech and speech to text only) is enough, and you can delete it afterwards. It powers the spoken read-back and your spoken answers; the live conversation needs judge access.
+        Kept encrypted in this browser only. Never stored or logged.
       </p>
       {err && <p role="alert" style={{ margin: 0, color: "#b3261e" }}>{err}</p>}
       <button type="submit" disabled={busy || key.length < 20}>{busy ? "Checking…" : "Use this key"}</button>
@@ -252,11 +246,11 @@ function JudgeForm({ judge, onRequested }: { judge: JudgeStatus | null; onReques
       <p className="status wait" role="status" style={{ marginTop: "0.8rem" }}>
         <span className="status-icon"><Icon name="clock" size={18} /></span>
         <span>
-          Request sent. {alerted ? "The owner has been alerted and usually approves within minutes." : "The owner will see it soon."} Keep this page open: voice unlocks here by itself.
+          Request sent{alerted ? " to the owner" : ""}. Keep this page open; voice turns on by itself.
         </span>
       </p>
     );
-  if (judge?.status === "denied") return <p className="status bad" role="status" style={{ marginTop: "0.8rem" }}><span>Access was not approved. You can still use your own ElevenLabs key, or the demo without voice.</span></p>;
+  if (judge?.status === "denied") return <p className="status bad" role="status" style={{ marginTop: "0.8rem" }}><span>Not approved. The demo still works by touch.</span></p>;
   return (
     <form onSubmit={send} style={{ display: "grid", gap: "0.6rem", marginTop: "0.8rem" }}>
       <label htmlFor="jn">Your name</label>
@@ -266,7 +260,7 @@ function JudgeForm({ judge, onRequested }: { judge: JudgeStatus | null; onReques
       <label htmlFor="jc">Competition you are judging for</label>
       <input id="jc" value={f.competition} onChange={(e) => setF({ ...f, competition: e.target.value })} required maxLength={120} />
       <input tabIndex={-1} autoComplete="off" aria-hidden="true" value={f.website} onChange={(e) => setF({ ...f, website: e.target.value })} style={{ position: "absolute", left: "-9999px", width: 1, height: 1 }} />
-      <p className="muted" style={{ margin: 0 }}>Approved judges get live voice for 24 hours, limited to a few conversations. No API key needed. Your details go only to the owner.</p>
+      <p className="muted" style={{ margin: 0 }}>Live voice for 24 hours. Your details go only to the owner.</p>
       {err && <p role="alert" style={{ margin: 0, color: "#b3261e" }}>{err}</p>}
       <button type="submit" disabled={busy}>{busy ? "Sending…" : "Request access"}</button>
     </form>
