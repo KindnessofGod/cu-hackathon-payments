@@ -69,7 +69,7 @@ export default function Home() {
               <em>Without a helper.</em>
             </h1>
             <p className="lead">
-              Money on your own terms, for people anywhere who can&apos;t see a screen or read. It starts with payments: every request is spoken aloud with the exact amount, and only you can approve it.
+              The voice payment app that gives people who are blind, elderly or can&apos;t read financial autonomy.
             </p>
             <div className="lp-cta">
               <Link href="/demo" className="button">Try the demo</Link>
