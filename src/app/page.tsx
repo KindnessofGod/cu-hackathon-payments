@@ -27,6 +27,12 @@ const STATUS: { k: "works" | "proto" | "plan"; name: string; status: string }[] 
   { k: "plan", name: "Screen-reader testing", status: "Planned" },
 ];
 
+const NEXT = [
+  "Airtime and data top-ups",
+  "Bills and subscriptions",
+  "Shopping online",
+];
+
 export default function Home() {
   return (
     <div className="lp">
@@ -58,7 +64,7 @@ export default function Home() {
               <em>Without a helper.</em>
             </h1>
             <p className="lead">
-              A wallet for people who are blind, elderly or can&apos;t read. Every request is spoken aloud with the exact amount. Only you can approve it.
+              Money on your own terms, for people who can&apos;t see a screen or read. It starts with payments: every request is spoken aloud with the exact amount, and only you can approve it.
             </p>
             <div className="lp-cta">
               <Link href="/demo" className="button">Try the demo</Link>
@@ -81,8 +87,8 @@ export default function Home() {
           <div className="lp-wrap">
             <Reveal className="sec-head">
               <p className="label">Why it exists</p>
-              <h2 id="why-h">Paying shouldn&apos;t mean handing over your PIN.</h2>
-              <p className="sub">Many people who can&apos;t see a screen or read numbers give their card and PIN to someone else to pay for them. Pay Alone lets them pay on their own.</p>
+              <h2 id="why-h">Your money should answer only to you.</h2>
+              <p className="sub">Many people who can&apos;t see a screen or read numbers hand their card and PIN to someone else to pay for them. Pay Alone starts by letting them pay on their own.</p>
             </Reveal>
           </div>
         </section>
@@ -160,6 +166,26 @@ export default function Home() {
                   <li key={r.name}>
                     <span className="nm">{r.name}</span>
                     <span className={`st ${r.k}`}><i aria-hidden="true" />{r.status}</span>
+                  </li>
+                ))}
+              </ul>
+            </Reveal>
+          </div>
+        </section>
+
+        <section className="lp-sec" id="next" aria-labelledby="next-h">
+          <div className="lp-wrap">
+            <Reveal className="sec-head">
+              <p className="label">Where it&apos;s going</p>
+              <h2 id="next-h">Payments first. Then everything else.</h2>
+              <p className="sub">The same voice and the same approval, for the things people pay for every day. None of these are built yet.</p>
+            </Reveal>
+            <Reveal className="status-card">
+              <ul>
+                {NEXT.map((n) => (
+                  <li key={n}>
+                    <span className="nm">{n}</span>
+                    <span className="st plan"><i aria-hidden="true" />Next · not built yet</span>
                   </li>
                 ))}
               </ul>

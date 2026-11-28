@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "Pay Alone",
-  description: "A wallet that blind, elderly and non-reading people can operate alone. Built on Open Payments.",
+  description: "Money on your own terms for people who can't see a screen or read, starting with payments they approve alone. Built on Open Payments.",
   appleWebApp: { capable: true, title: "Pay Alone", statusBarStyle: "default" },
 };
 
