@@ -111,7 +111,38 @@ export default function DemoPage() {
           </ol>
         </header>
 
-        <section className="d5-access" aria-labelledby="voice-h">
+        {error && <p role="alert" className="status bad"><span>{error}</span></p>}
+
+        <section className="d5-studio" aria-label="The two apps">
+          <div className="d5-floor" aria-hidden="true" />
+          {!session?.demo ? (
+            <div className="d5-start">
+              <div className="d5-ghosts" aria-hidden="true"><i /><i /></div>
+              <button className="lime-btn" onClick={() => void start()} disabled={busy}>{busy ? "Setting up…" : "Start the demo"}</button>
+              <p>Creates a simulated customer with a ₦50,000 weekly limit and a simulated seller, on this browser only.</p>
+            </div>
+          ) : (
+            <>
+              <div className="d5-bar">
+                <div className="demo-tabs" role="tablist" aria-label="Which side to show on a narrow screen">
+                  <button role="tab" aria-selected={tab === "customer"} className={tab === "customer" ? "" : "secondary"} onClick={() => setTab("customer")}>Customer</button>
+                  <button role="tab" aria-selected={tab === "seller"} className={tab === "seller" ? "seller" : "secondary"} onClick={() => setTab("seller")}>Seller</button>
+                </div>
+                <span className="d5-live" aria-hidden="true"><i /> Simulated wallet · play money</span>
+                <button className="secondary" onClick={() => void restart()} disabled={busy}>Start over</button>
+              </div>
+              <div className="demo-stage" data-tab={tab}>
+                <div className="demo-col"><span className="demo-label customer"><Icon name="person" size={18} /> Customer · hears and approves</span><iframe key={`c${frame}`} className="demo-pane customer" title="Customer app" src="/wallet" allow="microphone; autoplay; publickey-credentials-get; publickey-credentials-create" /></div>
+                <div className="demo-col"><span className="demo-label seller"><Icon name="shop" size={18} /> Seller · asks for payment</span><iframe key={`s${frame}`} className="demo-pane seller" title="Seller app" src="/merchant" allow="camera; autoplay" /></div>
+              </div>
+            </>
+          )}
+        </section>
+        <p className="muted" style={{ marginTop: "1.5rem" }}>
+          Simulated wallet, play money. The real Interledger test-wallet version is the same app: sign in on the customer side with your own test wallet address instead.
+        </p>
+
+        <section className="d5-access" style={{ marginTop: "1.5rem" }} aria-labelledby="voice-h">
           <div className="d5-access-head">
             <h2 id="voice-h">Voice</h2>
             <p className="muted">
@@ -159,37 +190,6 @@ export default function DemoPage() {
             <button className="secondary" onClick={async () => { await api("/api/voice/byok", { method: "DELETE" }).catch(() => undefined); void refresh(); }}>Remove my key from this browser</button>
           )}
         </section>
-
-        {error && <p role="alert" className="status bad"><span>{error}</span></p>}
-
-        <section className="d5-studio" aria-label="The two apps">
-          <div className="d5-floor" aria-hidden="true" />
-          {!session?.demo ? (
-            <div className="d5-start">
-              <div className="d5-ghosts" aria-hidden="true"><i /><i /></div>
-              <button className="lime-btn" onClick={() => void start()} disabled={busy}>{busy ? "Setting up…" : "Start the demo"}</button>
-              <p>Creates a simulated customer with a ₦50,000 weekly limit and a simulated seller, on this browser only.</p>
-            </div>
-          ) : (
-            <>
-              <div className="d5-bar">
-                <div className="demo-tabs" role="tablist" aria-label="Which side to show on a narrow screen">
-                  <button role="tab" aria-selected={tab === "customer"} className={tab === "customer" ? "" : "secondary"} onClick={() => setTab("customer")}>Customer</button>
-                  <button role="tab" aria-selected={tab === "seller"} className={tab === "seller" ? "seller" : "secondary"} onClick={() => setTab("seller")}>Seller</button>
-                </div>
-                <span className="d5-live" aria-hidden="true"><i /> Simulated wallet · play money</span>
-                <button className="secondary" onClick={() => void restart()} disabled={busy}>Start over</button>
-              </div>
-              <div className="demo-stage" data-tab={tab}>
-                <div className="demo-col"><span className="demo-label customer"><Icon name="person" size={18} /> Customer · hears and approves</span><iframe key={`c${frame}`} className="demo-pane customer" title="Customer app" src="/wallet" allow="microphone; autoplay; publickey-credentials-get; publickey-credentials-create" /></div>
-                <div className="demo-col"><span className="demo-label seller"><Icon name="shop" size={18} /> Seller · asks for payment</span><iframe key={`s${frame}`} className="demo-pane seller" title="Seller app" src="/merchant" allow="camera; autoplay" /></div>
-              </div>
-            </>
-          )}
-        </section>
-        <p className="muted" style={{ marginTop: "1.5rem" }}>
-          Simulated wallet, play money. The real Interledger test-wallet version is the same app: sign in on the customer side with your own test wallet address instead.
-        </p>
       </main>
     </>
   );
