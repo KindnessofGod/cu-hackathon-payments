@@ -1,37 +1,41 @@
 import Image from "next/image";
 import Link from "next/link";
 import { Icon } from "@/components/ui";
+import { HowItWorks } from "@/components/landing/HowItWorks";
 import { Reveal } from "@/components/landing/Reveal";
+import { InkStatement, FingerArt, CallPhone, LimitDial } from "@/components/landing/Art";
 import "./landing.css";
 import "./landing-sections.css";
 
 const CONTACT = "mailto:kindness@ikangrowthenterprise.com.ng";
-const STEPS = [
-  { t: "Set a weekly limit once", s: "You approve it on your own wallet's page. After that, you never type an amount." },
-  { t: "A seller sends a request", s: "They enter your pay code and the amount. Nothing is paid yet." },
-  { t: "You hear it and approve", s: "The exact amount is read aloud. You approve with your fingerprint, or say nothing and it's a no." },
-] as const;
-
-const SAFETY = [
-  { icon: "shield", t: "Your wallet sets the limit", s: "Anything over your weekly limit is refused by the wallet itself." },
-  { icon: "clock", t: "Silence means no", s: "If you don't approve, nothing is paid." },
-  { icon: "stop", t: "Stop at any time", s: "One action cancels the permission. (Simulated on the test wallet for now.)" },
-] as const;
-
-const STATUS: { k: "works" | "proto" | "plan"; name: string; status: string }[] = [
-  { k: "works", name: "Payments, weekly limit and refusal", status: "Works · test network" },
-  { k: "works", name: "Fingerprint approval", status: "Works · tested on one iPad" },
-  { k: "proto", name: "One-device demo", status: "Simulated wallet" },
-  { k: "proto", name: "Phone-call PIN path", status: "Prototype · separate build" },
-  { k: "proto", name: "Voice in English, Pidgin, Yoruba, Hausa, Igbo", status: "Testing · not checked by native speakers" },
-  { k: "plan", name: "Screen-reader testing", status: "Planned" },
-];
-
-const NEXT = [
-  "Airtime and data top-ups",
-  "Bills and subscriptions",
-  "Shopping online",
-  "More countries and currencies",
+const STATUS: { k: string; h: string; items: [string, string][] }[] = [
+  {
+    k: "real",
+    h: "Works today, test network",
+    items: [
+      ["Payments, limit and refusal", "Interledger test wallet, play money."],
+      ["Fingerprint approval", "Passkey tested on one iPad. Other devices untested."],
+    ],
+  },
+  {
+    k: "sim",
+    h: "Simulated or prototype",
+    items: [
+      ["One-device judge demo", "Pretend wallet so anyone can try it with no setup."],
+      ["Phone-call PIN path", "Separate prototype, not in this website's demo."],
+      ["Live voice in English, Pidgin, Yoruba, Hausa, Igbo", "Built, still testing. Wording not yet checked by native speakers."],
+    ],
+  },
+  {
+    k: "plan",
+    h: "Next · not built yet",
+    items: [
+      ["Screen-reader testing", "Not yet done with VoiceOver or TalkBack users."],
+      ["Airtime, data and bills", "The same voice and the same approval."],
+      ["Subscriptions and shopping online", "Pay any merchant, approved only by you."],
+      ["More countries and currencies", "Nigeria first. Then the world."],
+    ],
+  },
 ];
 
 export default function Home() {
@@ -46,7 +50,7 @@ export default function Home() {
           </span>
           <nav className="links" aria-label="Main">
             <a href="#how">How it works</a>
-            <a href="#approval">Approval</a>
+            <a href="#two-ways">Approval</a>
             <a href="#safety">Safety</a>
             <a href="#status">What works</a>
           </nav>
@@ -84,128 +88,126 @@ export default function Home() {
           <p className="lp-caption">Screens from the demo. Play money.</p>
         </section>
 
-        <section className="lp-sec" id="why" aria-labelledby="why-h">
-          <div className="lp-wrap">
-            <Reveal className="sec-head">
-              <p className="label">Why it exists</p>
-              <h2 id="why-h">Your money should answer only to you.</h2>
-              <p className="sub">Many people who can&apos;t see a screen or read numbers hand their card and PIN to someone else to pay for them. Pay Alone starts by letting them pay on their own.</p>
-            </Reveal>
-            <Reveal className="stats2">
-              <div><b>2.2 billion</b><span>people live with a vision impairment</span></div>
-              <div><b>739 million</b><span>adults lack basic literacy</span></div>
-            </Reveal>
-            <p className="src-note">Sources: World Health Organization, World report on vision; UNESCO, 2024.</p>
+        <section className="lp-sec problem" aria-labelledby="problem-h">
+          <div className="lp-wrap problem-grid">
+            <div>
+              <p className="kicker">The problem</p>
+              <InkStatement id="problem-h" text="The helper was always the risk." accent={["always"]} />
+              <p className="sub">
+                Around the world, 2.2 billion people live with a vision impairment and 739 million adults lack basic literacy. Many hand over a card and say the PIN aloud so someone else can pay. Pay Alone takes the helper out of the loop.
+              </p>
+              <p className="src-note">Sources: World Health Organization, World report on vision; UNESCO, 2024.</p>
+            </div>
+            <ul className="risks" aria-label="What can go wrong with a helper">
+              <li className="r1"><span className="risk-n">A</span><b>A swapped card</b><span>Handed over at a counter or an ATM, and a different card comes back.</span></li>
+              <li className="r2"><span className="risk-n">B</span><b>An overheard PIN</b><span>Said aloud so someone else can type it. Now more than one person knows it.</span></li>
+              <li className="r3"><span className="risk-n">C</span><b>An emptied account</b><span>Drained by someone who was trusted to help.</span></li>
+            </ul>
           </div>
         </section>
 
-        <section className="lp-sec" id="how" aria-labelledby="how-h">
+        <section className="lp-sec dark how-sec" id="how" aria-labelledby="how-h">
+          <div className="grain" aria-hidden="true" />
           <div className="lp-wrap">
-            <Reveal className="sec-head">
-              <p className="label">How it works</p>
-              <h2 id="how-h">Three steps. No helper.</h2>
-            </Reveal>
-            <Reveal className="cards3">
-              {STEPS.map((x, i) => (
-                <div className="card-w" key={x.t}>
-                  <span className="num" aria-hidden="true">{i + 1}</span>
-                  <h3>{x.t}</h3>
-                  <p>{x.s}</p>
+            <div className="sec-head">
+              <p className="kicker">How it works</p>
+              <h2 id="how-h">Five moments. <em>Nobody else</em> touches your money.</h2>
+            </div>
+            <HowItWorks />
+          </div>
+        </section>
+
+        <section className="lp-sec" id="two-ways" aria-labelledby="two-h">
+          <div className="lp-wrap">
+            <div className="sec-head split-head">
+              <div>
+                <p className="kicker">Approval</p>
+                <h2 id="two-h">Two ways to say yes. <em>Both only yours.</em></h2>
+              </div>
+              <p className="sub">A smartphone app for people who have one. A plain phone call for people who do not. Neither one ever asks you to say a secret aloud.</p>
+            </div>
+            <div className="diptych">
+              <Reveal className="dip light">
+                <div className="dip-copy">
+                  <span className="lp-tag">01 · Smartphone app</span>
+                  <h3>Your fingerprint.</h3>
+                  <p>Hear the request, touch the sensor. Each approval is tied to one amount and works once.</p>
+                  <ul className="ticks"><li>Built and live in the web demo</li><li>Tested with Touch ID on one iPad</li></ul>
                 </div>
-              ))}
-            </Reveal>
+                <FingerArt />
+              </Reveal>
+              <Reveal delay={120} className="dip dark">
+                <div className="dip-copy">
+                  <span className="lp-tag">02 · Any phone, by call · prototype</span>
+                  <h3>Keypad PIN. Never spoken.</h3>
+                  <p>For basic phones. You hear the amount, then type your PIN on the keypad. You never say it aloud.</p>
+                  <ul className="ticks"><li>Separate prototype, not in this website&apos;s demo</li></ul>
+                </div>
+                <CallPhone />
+              </Reveal>
+            </div>
           </div>
         </section>
 
-        <section className="lp-sec" id="approval" aria-labelledby="two-h">
+        <section className="lp-sec paper safety" id="safety" aria-labelledby="safe-h">
           <div className="lp-wrap">
-            <Reveal className="sec-head">
-              <p className="label">Approval</p>
-              <h2 id="two-h">Two ways to approve.</h2>
-            </Reveal>
-            <Reveal className="cards2">
-              <div className="card-w">
-                <span className="ic-circle" aria-hidden="true"><Icon name="finger" size={26} /></span>
-                <p className="label">Smartphone app</p>
-                <h3>Your fingerprint</h3>
-                <p>Touch the sensor to approve one payment. Tested with Touch ID on an iPad.</p>
-              </div>
-              <div className="card-w">
-                <span className="ic-circle" aria-hidden="true"><Icon name="mic" size={26} /></span>
-                <p className="label">Any phone · prototype</p>
-                <h3>A keypad PIN on a call</h3>
-                <p>For basic phones. You hear the amount and type your PIN. You never say it aloud.</p>
-              </div>
-            </Reveal>
-          </div>
-        </section>
-
-        <section className="lp-sec" id="safety" aria-labelledby="safe-h">
-          <div className="lp-wrap">
-            <Reveal className="sec-head">
-              <p className="label">Safety</p>
-              <h2 id="safe-h">The AI never moves your money.</h2>
+            <div className="sec-head center">
+              <p className="kicker">Safety</p>
+              <h2 id="safe-h">The AI never moves <em>your money.</em></h2>
               <p className="sub">The voice reads and listens. Only you can approve a payment, and your wallet enforces your limit.</p>
-            </Reveal>
-            <Reveal className="items3">
-              {SAFETY.map((x) => (
-                <div className="item" key={x.t}>
-                  <span className="ic-circle" aria-hidden="true"><Icon name={x.icon} size={26} /></span>
-                  <h3>{x.t}</h3>
-                  <p>{x.s}</p>
-                </div>
+            </div>
+            <div className="bento2">
+              <Reveal className="bt limit">
+                <p className="lbl">Weekly limit · example</p>
+                <LimitDial />
+                <p className="big">₦50,000</p>
+                <p>You set it once on your own wallet&apos;s page. The wallet, not our server, refuses anything above it.</p>
+              </Reveal>
+              <Reveal delay={100} className="bt nothing">
+                <span className="nothing-ic" aria-hidden="true"><Icon name="clock" size={30} /></span>
+                <h3>Doing nothing means no.</h3>
+                <p>The whole screen is one button. If you do not approve, nothing is paid.</p>
+              </Reveal>
+              <Reveal delay={200} className="bt stop">
+                <span className="stop-btn" aria-hidden="true"><Icon name="stop" size={30} /></span>
+                <h3>Stop everything.</h3>
+                <p>One action cancels the permission you gave. On the test wallet this part is still simulated.</p>
+              </Reveal>
+            </div>
+          </div>
+        </section>
+
+        <section className="lp-sec status-sec" id="status" aria-labelledby="status-h">
+          <div className="lp-wrap">
+            <div className="sec-head split-head">
+              <div>
+                <p className="kicker">Honesty</p>
+                <h2 id="status-h">What is real <em>today.</em></h2>
+              </div>
+              <p className="sub">An early prototype built by one person, starting in Nigeria. Here is what works, and what comes next.</p>
+            </div>
+            <div className="board3">
+              {STATUS.map((col) => (
+                <Reveal key={col.h} className={`col ${col.k}`}>
+                  <h3><span className="col-dot" aria-hidden="true" />{col.h}</h3>
+                  <ul>
+                    {col.items.map(([t, n]) => (<li key={t}><b>{t}</b><span>{n}</span></li>))}
+                  </ul>
+                </Reveal>
               ))}
-            </Reveal>
-          </div>
-        </section>
-
-        <section className="lp-sec" id="status" aria-labelledby="status-h">
-          <div className="lp-wrap">
-            <Reveal className="sec-head">
-              <p className="label">Honest status</p>
-              <h2 id="status-h">What works today.</h2>
-              <p className="sub">An early prototype built by one person.</p>
-            </Reveal>
-            <Reveal className="status-card">
-              <ul>
-                {STATUS.map((r) => (
-                  <li key={r.name}>
-                    <span className="nm">{r.name}</span>
-                    <span className={`st ${r.k}`}><i aria-hidden="true" />{r.status}</span>
-                  </li>
-                ))}
-              </ul>
-            </Reveal>
-          </div>
-        </section>
-
-        <section className="lp-sec" id="next" aria-labelledby="next-h">
-          <div className="lp-wrap">
-            <Reveal className="sec-head">
-              <p className="label">Where it&apos;s going</p>
-              <h2 id="next-h">Nigeria first. Then the world.</h2>
-              <p className="sub">We start with payments in naira, on a test network. Next: the same voice and the same approval for everything people pay for, in more countries and languages. None of these are built yet.</p>
-            </Reveal>
-            <Reveal className="status-card">
-              <ul>
-                {NEXT.map((n) => (
-                  <li key={n}>
-                    <span className="nm">{n}</span>
-                    <span className="st plan"><i aria-hidden="true" />Next · not built yet</span>
-                  </li>
-                ))}
-              </ul>
-            </Reveal>
+            </div>
           </div>
         </section>
 
         <section className="finale" id="contact" aria-labelledby="c">
           <div className="lp-wrap">
             <div className="finale-card">
-              <h2 id="c">See it for yourself.</h2>
-              <p>The demo takes about a minute. Judges can request live voice.</p>
+              <div className="finale-glow" aria-hidden="true" />
+              <p className="kicker">Nigeria first. Then the world.</p>
+              <h2 id="c">See it for <em>yourself.</em></h2>
+              <p>Try the demo in about a minute, or request judge access to unlock live voice.</p>
               <div className="lp-cta">
-                <Link href="/demo" className="button lime">Try the demo</Link>
+                <Link href="/demo" className="button lime">Open the demo <Icon name="back" size={20} className="flip" /></Link>
                 <Link href="/demo#voice-h" className="button secondary on-dark">Request judge access</Link>
               </div>
             </div>
@@ -213,7 +215,7 @@ export default function Home() {
           <footer className="lp-footer2">
             <div className="lp-wrap">
               <div className="foot-row">
-                <span>© 2026 iKan Growth Enterprise</span>
+                <span>© 2026 iKan Growth Enterprise. Pay Alone.</span>
                 <nav aria-label="Footer"><Link href="/wallet">Customer app</Link><Link href="/merchant">Seller app</Link><Link href="/demo">Demo</Link><a href={CONTACT}>Contact</a></nav>
               </div>
               <p className="foot-note">Interledger test network, play money. The AI never approves, pays or confirms money.</p>

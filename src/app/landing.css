@@ -1,11 +1,12 @@
-/* Landing page, round 6 "Quiet". One focal point per section. Tokens come from globals.css. */
+/* Landing page, round 7. Round-6 hero and nav, round-5 body sections. Tokens come from globals.css. */
 .lp { --ink: #0d1f19; --muted: #44564e; --green: #0e7a55; --sage: #e6efd9; --lime: #bfe98a; --card-line: 1px solid rgba(13, 31, 25, 0.1); background: var(--bg); overflow-x: clip; font-size: 1.1rem; }
-.lp h1, .lp h2 { font-family: var(--font-serif), Georgia, serif; font-weight: 400; margin: 0; }
-.lp h3 { font-family: var(--font-sans), system-ui, sans-serif; font-weight: 600; font-size: 1.15rem; margin: 0; }
+.lp h1, .lp h2, .lp h3 { font-family: var(--font-serif), Georgia, serif; font-weight: 400; }
+.lp h1, .lp h2 { margin: 0; }
 .lp em { font-style: italic; }
 .lp-wrap { max-width: 72rem; margin: 0 auto; padding: 0 1.25rem; position: relative; }
-.lp .label { font-size: 0.9rem; font-weight: 600; color: var(--green); margin: 0 0 0.75rem; }
-.lp p { line-height: 1.6; }
+.kicker { font-size: 0.8rem; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--green); margin: 0 0 1rem; }
+.lp .flip { transform: scaleX(-1); }
+.lp-hero p { line-height: 1.6; }
 
 /* nav */
 .lp-nav { position: sticky; top: 0; z-index: 20; background: rgba(246, 243, 236, 0.85); backdrop-filter: blur(14px); border-bottom: 1px solid rgba(13, 31, 25, 0.06); }
@@ -28,6 +29,8 @@
 .lp-hero .lead { font-size: 1.1rem; color: var(--muted); max-width: 36rem; margin: 1.5rem 0; line-height: 1.6; animation: fade 1s 0.3s both; }
 @keyframes rise { from { opacity: 0; transform: translateY(24px); } }
 @keyframes fade { from { opacity: 0; transform: translateY(12px); } }
+@keyframes blink { 50% { opacity: 0.3; } }
+@keyframes pop { from { opacity: 0; transform: scale(0.92); } }
 .lp-cta { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.75rem; }
 .lp-cta .button { margin: 0; min-height: 3.5rem; padding: 0.8rem 2rem; font-size: 1.05rem; }
 .hero-center .lp-cta { animation: fade 1s 0.45s both; }
@@ -38,6 +41,44 @@
 .phone-a { transform: rotate(-4deg); margin-top: 0.5rem; }
 .phone-b { transform: rotate(4deg); margin-top: 1.25rem; }
 .lp-caption { text-align: center; font-size: 0.9rem; color: var(--muted); margin: 0; padding: 1rem 1.25rem 1.5rem; position: relative; }
+
+/* animated scene */
+.scene { display: grid; gap: 1rem; justify-items: center; }
+.scene-phone { position: relative; width: min(78vw, 20rem); aspect-ratio: 9 / 18.2; background: var(--ink); border-radius: 3rem; padding: 0.65rem; box-shadow: 0 70px 110px -30px rgba(13, 31, 25, 0.5), inset 0 0 0 2px #223a30; transform: rotate(-2.5deg); }
+.scene-notch { position: absolute; z-index: 2; top: 1.05rem; left: 50%; width: 5rem; height: 1.3rem; margin-left: -2.5rem; border-radius: 99px; background: #000; }
+.scene-screen { height: 100%; border-radius: 2.4rem; padding: 3.2rem 1.4rem 1.2rem; display: flex; flex-direction: column; background: #f4f6ee; color: var(--ink); transition: background 0.5s; overflow: hidden; }
+.scene-screen.s1 { background: var(--ink); color: #fff; }
+.scene-screen.s2 { background: #e0f2d0; }
+.scene-screen.s3 { background: #f6e4df; }
+.scene-top { display: flex; align-items: center; gap: 0.5rem; font-weight: 700; font-size: 0.82rem; }
+.scene-top em { margin-left: auto; font-style: normal; font-weight: 500; font-size: 0.7rem; opacity: 0.7; }
+.scene-dot { width: 0.6rem; height: 0.6rem; border-radius: 50%; background: var(--green); }
+.scene-tag { margin-top: 1.4rem; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; opacity: 0.75; animation: fade 0.5s both; }
+.scene-amt { font-family: var(--font-serif), Georgia, serif; font-size: 4rem; line-height: 1; letter-spacing: -0.03em; margin: 0.3rem 0; animation: pop 0.6s both; }
+@keyframes pop { from { opacity: 0; transform: scale(0.92); } }
+.scene-line { font-size: 1rem; line-height: 1.4; margin: 0; min-height: 4.2em; animation: fade 0.6s 0.1s both; }
+.scene-stage { flex: 1; display: grid; place-items: center; position: relative; min-height: 6rem; }
+.scene-cap { position: absolute; bottom: 0; font-size: 0.75rem; opacity: 0.7; }
+.wave { display: flex; align-items: center; gap: 3px; height: 4.5rem; width: 100%; }
+.wave i { flex: 1; border-radius: 99px; background: var(--green); transform-origin: center; opacity: 0.85; }
+.wave.live i { animation: eq 0.9s ease-in-out infinite alternate; }
+@keyframes eq { from { transform: scaleY(0.25); } to { transform: scaleY(1.15); } }
+.scene-fp { position: relative; display: grid; place-items: center; width: 6.5rem; height: 6.5rem; border-radius: 50%; background: var(--lime); color: var(--ink); }
+.scene-fp i { position: absolute; inset: 0; border-radius: 50%; border: 2px solid var(--lime); animation: ring 1.8s ease-out infinite; }
+.scene-fp i:nth-of-type(2) { animation-delay: 0.9s; }
+@keyframes ring { to { transform: scale(1.8); opacity: 0; } }
+.scene-ok, .scene-no { display: grid; place-items: center; width: 5.5rem; height: 5.5rem; border-radius: 50%; animation: pop 0.5s both; }
+.scene-ok { background: var(--green); color: #fff; }
+.scene-no { background: #b8332a; color: #fff; }
+.scene-ok .tick { stroke-dasharray: 30; stroke-dashoffset: 30; animation: draw 0.6s 0.2s forwards; }
+@keyframes draw { to { stroke-dashoffset: 0; } }
+.scene-meter { height: 0.6rem; border-radius: 99px; background: rgba(13, 31, 25, 0.12); overflow: hidden; }
+.scene-screen.s1 .scene-meter { background: rgba(255, 255, 255, 0.18); }
+.scene-meter span { display: block; height: 100%; background: var(--green); border-radius: 99px; transition: width 0.8s; }
+.scene-foot { font-size: 0.72rem; margin-top: 0.5rem; opacity: 0.75; }
+.scene-dots { display: flex; gap: 0.45rem; }
+.scene-dots b { width: 0.55rem; height: 0.55rem; border-radius: 99px; background: rgba(13, 31, 25, 0.2); transition: all 0.3s; }
+.scene-dots b.on { width: 1.6rem; background: var(--ink); }
 
 /* page furniture */
 .skip { position: absolute; left: -999px; top: 0; background: var(--ink); color: #fff; padding: 0.75rem 1rem; z-index: 50; }
