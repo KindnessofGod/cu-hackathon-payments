@@ -31,6 +31,7 @@ const NEXT = [
   "Airtime and data top-ups",
   "Bills and subscriptions",
   "Shopping online",
+  "More countries and currencies",
 ];
 
 export default function Home() {
@@ -64,7 +65,7 @@ export default function Home() {
               <em>Without a helper.</em>
             </h1>
             <p className="lead">
-              Money on your own terms, for people who can&apos;t see a screen or read. It starts with payments: every request is spoken aloud with the exact amount, and only you can approve it.
+              Money on your own terms, for people anywhere who can&apos;t see a screen or read. It starts with payments: every request is spoken aloud with the exact amount, and only you can approve it.
             </p>
             <div className="lp-cta">
               <Link href="/demo" className="button">Try the demo</Link>
@@ -90,6 +91,11 @@ export default function Home() {
               <h2 id="why-h">Your money should answer only to you.</h2>
               <p className="sub">Many people who can&apos;t see a screen or read numbers hand their card and PIN to someone else to pay for them. Pay Alone starts by letting them pay on their own.</p>
             </Reveal>
+            <Reveal className="stats2">
+              <div><b>2.2 billion</b><span>people live with a vision impairment</span></div>
+              <div><b>739 million</b><span>adults lack basic literacy</span></div>
+            </Reveal>
+            <p className="src-note">Sources: World Health Organization, World report on vision; UNESCO, 2024.</p>
           </div>
         </section>
 
@@ -177,8 +183,8 @@ export default function Home() {
           <div className="lp-wrap">
             <Reveal className="sec-head">
               <p className="label">Where it&apos;s going</p>
-              <h2 id="next-h">Payments first. Then everything else.</h2>
-              <p className="sub">The same voice and the same approval, for the things people pay for every day. None of these are built yet.</p>
+              <h2 id="next-h">Nigeria first. Then the world.</h2>
+              <p className="sub">We start with payments in naira, on a test network. Next: the same voice and the same approval for everything people pay for, in more countries and languages. None of these are built yet.</p>
             </Reveal>
             <Reveal className="status-card">
               <ul>

@@ -50,3 +50,10 @@
   .lp *, .lp *::before, .lp *::after { animation: none !important; transition: none !important; }
   .rv { opacity: 1; transform: none; }
 }
+
+.stats2 { display: grid; gap: 2rem; max-width: 40rem; margin-inline: auto; text-align: center; }
+@media (min-width: 40rem) { .stats2 { grid-template-columns: 1fr 1fr; } }
+.stats2 div { display: grid; gap: 0.4rem; }
+.stats2 b { font-family: var(--font-serif), Georgia, serif; font-weight: 400; font-size: clamp(2.6rem, 5vw, 3.4rem); line-height: 1; color: var(--ink); }
+.stats2 span { color: var(--muted); }
+.src-note { text-align: center; color: var(--muted); font-size: 0.9rem; margin: 2rem auto 0; }
