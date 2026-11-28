@@ -65,8 +65,7 @@ export default function Home() {
           <div className="lp-wrap hero-center">
             <span className="lp-pill">Test network · play money · built on Open Payments</span>
             <h1 id="h">
-              Pay alone.<br />
-              <em>Without a helper.</em>
+              Pay alone.
             </h1>
             <p className="lead">
               The voice payment app that gives people who are blind, elderly or can&apos;t read financial autonomy.
