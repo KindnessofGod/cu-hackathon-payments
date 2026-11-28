@@ -94,22 +94,31 @@ export default function DemoPage() {
   return (
     <>
       <AppBar />
-      <main className="demo">
-        <section className="hero">
-          <span className="eyebrow">Judge demo · simulated wallet</span>
-          <h1>Try Pay Alone <em>on this one device.</em></h1>
-          <p className="lead">
-            You get a customer and a seller side by side. The customer has a weekly limit already set. Ask for a payment as the seller, hear it as the customer,
-            and approve it. Everything here runs on a <strong>simulated</strong> wallet with play money: no real money moves, and the AI never approves or pays.
-          </p>
-        </section>
+      <main className="demo5">
+        <header className="d5-hero">
+          <div>
+            <p className="kick">Judge demo · simulated wallet</p>
+            <h1>Try Pay Alone <em>on this one device.</em></h1>
+            <p className="lead">
+              A customer and a seller, side by side. The customer already has a weekly limit. Ask for a payment as the seller, hear it as the customer, and approve
+              it. Everything here runs on a <strong>simulated</strong> wallet with play money: no real money moves, and the AI never approves or pays.
+            </p>
+          </div>
+          <ol className="d5-steps" aria-label="How to try it">
+            <li><span aria-hidden="true">01</span><b>Seller</b> Tap the demo customer, type an amount (try 2000), send the request.</li>
+            <li><span aria-hidden="true">02</span><b>Customer</b> The request appears and is read back with the exact amount. Approve it with a tap, or your fingerprint if you turn it on.</li>
+            <li><span aria-hidden="true">03</span><b>Seller</b> Watch it become &ldquo;received&rdquo;.</li>
+          </ol>
+        </header>
 
-        <section className="card" aria-labelledby="voice-h">
-          <div className="card-head">
-            <span className="card-icon">
-              <Icon name="speaker" />
-            </span>
+        <section className="d5-access" aria-labelledby="voice-h">
+          <div className="d5-access-head">
             <h2 id="voice-h">Voice</h2>
+            <p className="muted">
+              {voice === "locked"
+                ? "Voice uses paid speech services, so it is locked until you choose one way to unlock it. Touch only works the same."
+                : "Voice is on for this browser."}
+            </p>
           </div>
           {voice === "judge" && (
             <p className="status good" role="status">
@@ -125,51 +134,59 @@ export default function DemoPage() {
           )}
           {voice === "locked" && (
             <>
-              <p className="muted">
-                Voice uses paid speech services, so it is locked until you choose one way to unlock it. You can also skip voice and use touch only: the demo works the same.
-              </p>
-              <div className="chips">
-                <button className={panel === "judge" ? "" : "secondary"} onClick={() => setPanel(panel === "judge" ? "" : "judge")}>Request judge access</button>
-                <button className={panel === "key" ? "" : "secondary"} onClick={() => setPanel(panel === "key" ? "" : "key")}>Use my own ElevenLabs key</button>
+              <div className="d5-options">
+                <div className="d5-opt on">
+                  <span className="d5-opt-ic" aria-hidden="true"><Icon name="finger" size={22} /></span>
+                  <b>Touch only</b>
+                  <span>Works now. No setup.</span>
+                </div>
+                <button className={`d5-opt${panel === "judge" ? " sel" : ""}`} aria-expanded={panel === "judge"} onClick={() => setPanel(panel === "judge" ? "" : "judge")}>
+                  <span className="d5-opt-ic" aria-hidden="true"><Icon name="person" size={22} /></span>
+                  <b>Request judge access</b>
+                  <span>Live voice for 24 hours. No key needed.</span>
+                </button>
+                <button className={`d5-opt${panel === "key" ? " sel" : ""}`} aria-expanded={panel === "key"} onClick={() => setPanel(panel === "key" ? "" : "key")}>
+                  <span className="d5-opt-ic" aria-hidden="true"><Icon name="speaker" size={22} /></span>
+                  <b>Use my own ElevenLabs key</b>
+                  <span>Spoken read-back and answers.</span>
+                </button>
               </div>
               {panel === "key" && <KeyForm onSaved={() => { setPanel(""); void refresh(); }} />}
               {panel === "judge" && <JudgeForm judge={judge} onRequested={(s) => { setJudge(s); void poll(); }} />}
             </>
           )}
           {voice !== "locked" && (
-            <p className="muted" style={{ marginTop: "0.6rem" }}>
-              <button className="secondary" onClick={async () => { await api("/api/voice/byok", { method: "DELETE" }).catch(() => undefined); void refresh(); }}>Remove my key from this browser</button>
-            </p>
+            <button className="secondary" onClick={async () => { await api("/api/voice/byok", { method: "DELETE" }).catch(() => undefined); void refresh(); }}>Remove my key from this browser</button>
           )}
         </section>
 
         {error && <p role="alert" className="status bad"><span>{error}</span></p>}
 
-        {!session?.demo ? (
-          <section className="card">
-            <button className="wide" onClick={() => void start()} disabled={busy}>{busy ? "Setting up…" : "Start the demo"}</button>
-            <p className="muted">Creates a simulated customer with a ₦50,000 weekly limit and a simulated seller, on this browser only.</p>
-          </section>
-        ) : (
-          <>
-            <div className="demo-bar">
-              <div className="demo-tabs" role="tablist" aria-label="Which side to show on a narrow screen">
-                <button role="tab" aria-selected={tab === "customer"} className={tab === "customer" ? "" : "secondary"} onClick={() => setTab("customer")}>Customer</button>
-                <button role="tab" aria-selected={tab === "seller"} className={tab === "seller" ? "seller" : "secondary"} onClick={() => setTab("seller")}>Seller</button>
+        <section className="d5-studio" aria-label="The two apps">
+          <div className="d5-floor" aria-hidden="true" />
+          {!session?.demo ? (
+            <div className="d5-start">
+              <div className="d5-ghosts" aria-hidden="true"><i /><i /></div>
+              <button className="lime-btn" onClick={() => void start()} disabled={busy}>{busy ? "Setting up…" : "Start the demo"}</button>
+              <p>Creates a simulated customer with a ₦50,000 weekly limit and a simulated seller, on this browser only.</p>
+            </div>
+          ) : (
+            <>
+              <div className="d5-bar">
+                <div className="demo-tabs" role="tablist" aria-label="Which side to show on a narrow screen">
+                  <button role="tab" aria-selected={tab === "customer"} className={tab === "customer" ? "" : "secondary"} onClick={() => setTab("customer")}>Customer</button>
+                  <button role="tab" aria-selected={tab === "seller"} className={tab === "seller" ? "seller" : "secondary"} onClick={() => setTab("seller")}>Seller</button>
+                </div>
+                <span className="d5-live" aria-hidden="true"><i /> Simulated wallet · play money</span>
+                <button className="secondary" onClick={() => void restart()} disabled={busy}>Start over</button>
               </div>
-              <button className="secondary" onClick={() => void restart()} disabled={busy}>Start over</button>
-            </div>
-            <ol className="steps demo-steps">
-              <li><strong>Seller:</strong> tap the demo customer, type an amount (try 2000), send the request.</li>
-              <li><strong>Customer:</strong> the request appears and is read back with the exact amount. Approve it (tap, or your fingerprint if you turn it on).</li>
-              <li><strong>Seller:</strong> watch it become &ldquo;received&rdquo;.</li>
-            </ol>
-            <div className="demo-stage" data-tab={tab}>
-              <div className="demo-col"><span className="demo-label customer"><Icon name="person" size={18} /> Customer · hears and approves</span><iframe key={`c${frame}`} className="demo-pane customer" title="Customer app" src="/wallet" allow="microphone; autoplay; publickey-credentials-get; publickey-credentials-create" /></div>
-              <div className="demo-col"><span className="demo-label seller"><Icon name="shop" size={18} /> Seller · asks for payment</span><iframe key={`s${frame}`} className="demo-pane seller" title="Seller app" src="/merchant" allow="camera; autoplay" /></div>
-            </div>
-          </>
-        )}
+              <div className="demo-stage" data-tab={tab}>
+                <div className="demo-col"><span className="demo-label customer"><Icon name="person" size={18} /> Customer · hears and approves</span><iframe key={`c${frame}`} className="demo-pane customer" title="Customer app" src="/wallet" allow="microphone; autoplay; publickey-credentials-get; publickey-credentials-create" /></div>
+                <div className="demo-col"><span className="demo-label seller"><Icon name="shop" size={18} /> Seller · asks for payment</span><iframe key={`s${frame}`} className="demo-pane seller" title="Seller app" src="/merchant" allow="camera; autoplay" /></div>
+              </div>
+            </>
+          )}
+        </section>
         <p className="muted" style={{ marginTop: "1.5rem" }}>
           Simulated wallet, play money. The real Interledger test-wallet version is the same app: sign in on the customer side with your own test wallet address instead.
         </p>

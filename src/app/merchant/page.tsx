@@ -114,7 +114,7 @@ export default function MerchantPage() {
   return (
     <>
       <AppBar role="Seller" />
-      <main>
+      <main className="seller-app">
         <h1>{data ? data.merchant.name : "Seller"}</h1>
         {loadError?.kind === "not_allowed" && <MerchantKey what="The seller page" onDone={load} />}
         {loadError && loadError.kind !== "not_allowed" && (

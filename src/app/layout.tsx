@@ -3,6 +3,7 @@ import { isSimulated } from "@/lib/op";
 import { currentCustomer } from "@/lib/http";
 import { Inter, Instrument_Serif } from "next/font/google";
 import "./globals.css";
+import "./app-v5.css";
 
 const sans = Inter({ subsets: ["latin"], variable: "--font-sans", display: "swap" });
 const serif = Instrument_Serif({ subsets: ["latin"], weight: "400", style: ["normal", "italic"], variable: "--font-serif", display: "swap" });

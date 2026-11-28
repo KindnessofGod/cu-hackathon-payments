@@ -1,0 +1,113 @@
+/* Customer app, round 5. Loaded after dashboard.css: ink and paper, one lime light, serif money.
+   Every size stays large; nothing here changes what the app says or does. */
+.dash, .takeover { --deep: #0d1f19; --deep-2: #07130f; --lime: #bfe98a; --ink: #0d1f19; --ink-2: #4a5c54; --rule: rgba(13, 31, 25, 0.12); --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace; }
+.dash { background: radial-gradient(60rem 30rem at 70% -10%, rgba(191, 233, 138, 0.28), transparent 60%), #f6f3ec; }
+.dash .money.xl, .dash .money.lg, .takeover .money.lg { font-family: var(--font-serif), Georgia, serif; font-weight: 400; letter-spacing: -0.03em; }
+.dash .money.xl { font-size: 4.2rem; }
+.dash .money.lg { font-size: 3rem; }
+
+/* rail */
+.rail { background: var(--deep); box-shadow: 0 30px 60px -30px rgba(13, 31, 25, 0.6); }
+.rail-logo { border-radius: 0.9rem; }
+.rail-btn.on, .dash a.rail-btn.on { background: var(--lime); color: var(--deep); box-shadow: 0 0 0 0.35rem rgba(191, 233, 138, 0.16); }
+
+/* greeting */
+.dash .hi { font-family: var(--mono); font-size: 0.8rem; letter-spacing: 0.1em; text-transform: uppercase; color: #0e7a55; font-weight: 600; }
+.dash .welcome { font-size: 3.1rem; color: var(--ink); line-height: 0.95; margin: 0.35rem 0; }
+.chip-soft { background: #fff; border: 1px solid var(--rule); box-shadow: none; font-weight: 600; }
+.round { background: #fff; border: 1px solid var(--rule); box-shadow: none; }
+
+/* the wallet card: an ink pass with a lime ticket on top */
+.dash .wallet-stack { background: var(--deep); border-radius: 2rem; padding: 0.55rem; box-shadow: 0 40px 70px -40px rgba(13, 31, 25, 0.8); }
+.dash .stack-top { background: var(--lime); border-radius: 1.5rem; padding: 1rem 1.2rem 2rem; gap: 0.8rem; }
+.dash .stack-row:first-child { font-family: var(--mono); font-size: 0.78rem; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.8; }
+.dash .stack-row.strong { font-family: var(--mono); font-size: 1.05rem; }
+.dash .op-mark { font-style: normal; font-weight: 700; }
+.dash .cur-mark { font-family: var(--font-serif), Georgia, serif; font-style: italic; font-weight: 400; font-size: 1.6rem; }
+.qr-chip { background: var(--deep); color: var(--lime); }
+.dash .frame { border: 0; border-radius: 1.4rem; padding: 1.4rem 0.8rem 1.3rem; background: radial-gradient(24rem 10rem at 50% 0%, rgba(191, 233, 138, 0.14), transparent 70%), linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px) 0 0 / 100% 1.2rem; }
+.dash .frame .money { color: #fff; }
+.dash .frame-label { font-size: 0.92rem; color: #c6d4ca; }
+.frame-bar { height: 0.5rem; background: rgba(255, 255, 255, 0.12); }
+.frame-bar span { background: linear-gradient(90deg, #5fd39a, var(--lime)); box-shadow: 0 0 14px rgba(191, 233, 138, 0.6); }
+.dash .coin { background: transparent; border: 1.5px solid rgba(191, 233, 138, 0.6); color: var(--lime); }
+.dash .pill.solid { background: var(--lime); color: var(--deep); }
+.dash .pill.ghost { border-color: rgba(255, 255, 255, 0.3); }
+
+/* cards */
+.dash .card { border: 1px solid var(--rule); border-radius: 1.75rem; background: #fff; box-shadow: 0 30px 50px -45px rgba(13, 31, 25, 0.4); }
+.card-top b, .card-head2 b { font-family: var(--mono); font-size: 0.78rem; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 700; }
+.dash .chart-card .money { color: var(--ink); margin-top: 0.6rem; }
+.bar-col { background: rgba(13, 31, 25, 0.05); border-radius: 999px; }
+.bar-fill { border-radius: 999px; background: var(--ink); }
+.bar.today .bar-fill { background: var(--lime); box-shadow: inset 0 0 0 2px var(--ink); }
+.bar.today .bar-d { font-family: var(--mono); }
+.person .peep { box-shadow: 0 0 0 3px #fff, 0 0 0 4px var(--rule); }
+.add-btn { border-color: rgba(13, 31, 25, 0.3); }
+.link { color: var(--ink) !important; text-decoration: underline !important; text-underline-offset: 3px; }
+
+/* safety strip */
+.safe { background: #fff; border: 1px solid var(--rule); border-radius: 1.4rem; }
+.safe b { font-size: 0.98rem; }
+.safe-ic { border-radius: 50%; background: var(--deep); color: var(--lime); }
+.dash button.safe-btn:hover { border-color: var(--ink); }
+
+/* voice panel */
+.voice-panel { background: radial-gradient(22rem 18rem at 50% 34%, rgba(95, 211, 154, 0.25), transparent 70%), radial-gradient(30rem 14rem at 50% 105%, rgba(191, 233, 138, 0.16), transparent 70%), linear-gradient(180deg, #11261f 0%, #07130f 100%); }
+.vp-top b { font-family: var(--font-serif), Georgia, serif; font-weight: 400; font-size: 1.5rem; letter-spacing: -0.01em; }
+.vp-status { font-family: var(--mono); letter-spacing: 0.06em; text-transform: uppercase; font-size: 0.72rem; }
+
+/* phone dock */
+.dock { background: var(--deep); box-shadow: 0 24px 50px -20px rgba(13, 31, 25, 0.7); }
+.dock-btn.on { background: var(--lime); color: var(--deep); box-shadow: none; }
+
+/* ================= Payment request: a ticket, then one big target ================= */
+.takeover { background: radial-gradient(50rem 26rem at 50% -8%, rgba(191, 233, 138, 0.45), transparent 65%), #f6f3ec; }
+.takeover .approve.pay-sheet { border: 0; gap: 1.4rem; }
+.takeover .peep { border-radius: 50%; }
+.takeover .approve:focus-visible { outline: 2px solid rgba(13, 31, 25, 0.18); outline-offset: -6px; }
+.takeover .approve.pay-sheet .peep { box-shadow: 0 0 0 0.4rem #fff, 0 0 0 calc(0.4rem + 1px) var(--rule), 0 20px 40px -18px rgba(13, 31, 25, 0.5); }
+.pay-who { font-family: var(--font-serif), Georgia, serif; font-weight: 400; font-size: clamp(2.3rem, 6vw, 3.2rem); line-height: 1; color: var(--ink); }
+.pay-what { font-size: 1.1rem; color: var(--ink-2); }
+.takeover .approve .new-tag { font-family: var(--mono); font-size: 0.75rem; letter-spacing: 0.1em; background: var(--ink); color: var(--lime); }
+.pay-stack { gap: 0; max-width: 32rem; filter: drop-shadow(0 30px 40px rgba(13, 31, 25, 0.18)); }
+.pay-card { border-radius: 0; }
+.pay-card.lime { background: #fff; color: var(--ink); border-radius: 1.8rem 1.8rem 0 0; padding: 1.4rem 1.5rem 1.6rem; text-align: center; }
+.pay-card.lime .money { justify-self: center; font-size: clamp(3.6rem, 12vw, 5.2rem); line-height: 0.95; color: var(--ink); }
+.pay-card.lime .pc-label { border: 0; padding: 0; font-family: var(--mono); font-size: 0.8rem; letter-spacing: 0.12em; text-transform: uppercase; opacity: 1; color: #0e7a55; font-weight: 700; }
+.pay-card.lime .pc-foot { font-size: 0.98rem; opacity: 1; color: var(--ink-2); }
+/* perforation between the two halves */
+.pay-link {
+  position: relative; z-index: 1; margin: 0; justify-self: stretch; border-radius: 0; box-shadow: none; padding: 0.6rem 1.5rem; text-align: center;
+  font-family: var(--mono); font-size: 0.82rem; letter-spacing: 0.04em; color: var(--ink-2); font-weight: 600;
+  background: radial-gradient(circle at 0 50%, transparent 0.9rem, #fbf8ef 0.95rem) left / 51% 100% no-repeat, radial-gradient(circle at 100% 50%, transparent 0.9rem, #fbf8ef 0.95rem) right / 51% 100% no-repeat;
+}
+.pay-link::before { content: ""; position: absolute; left: 1.4rem; right: 1.4rem; top: 0; border-top: 2px dashed rgba(13, 31, 25, 0.18); }
+.pay-card.dark { background: #fbf8ef; color: var(--ink); border-radius: 0 0 1.8rem 1.8rem; padding: 0.6rem 1.5rem 1.3rem; grid-template-columns: 1fr auto; align-items: end; }
+.pay-card.dark .pc-label { grid-column: 1; border: 0; padding: 0; font-size: 0.98rem; opacity: 1; color: var(--ink-2); }
+.pay-card.dark .money { grid-column: 2; grid-row: 1 / span 2; font-size: 2rem; color: var(--ink); }
+.pay-card.dark .pc-foot { grid-column: 1; opacity: 1; color: var(--ink-2); }
+/* the target: one long bar, the knob breathes when it is your turn */
+.pay-bar { background: var(--ink); padding: 0.5rem 1.4rem 0.5rem 0.5rem; font-size: 1.12rem; box-shadow: 0 24px 40px -20px rgba(13, 31, 25, 0.7); }
+.pay-knob { width: 4.2rem; height: 4.2rem; background: var(--lime); color: var(--ink); }
+.takeover .approve.armed .pay-bar { background: #0e7a55; }
+.takeover .approve.armed .pay-knob { background: #fff; }
+@media (prefers-reduced-motion: no-preference) {
+  .pay-knob { position: relative; }
+  .pay-knob::after { content: ""; position: absolute; inset: 0; border-radius: 50%; border: 2px solid var(--lime); animation: knobring 2.2s ease-out infinite; }
+  @keyframes knobring { from { transform: scale(1); opacity: 0.9; } to { transform: scale(1.7); opacity: 0; } }
+}
+.takeover .refuse { background: #fff; color: #8f2219; font-weight: 700; display: flex; gap: 0.6rem; }
+.takeover .refuse::before { content: "✕"; display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: 50%; background: #fbe4df; font-size: 0.95rem; }
+.takeover .refuse:hover:not(:disabled) { background: #fdf1ef; }
+@media (min-width: 900px) {
+  .takeover .approve.pay-sheet { background: rgba(255, 255, 255, 0.35); border: 1px solid var(--rule); }
+  .takeover .refuse { border: 1px solid #f0d3cd; }
+}
+@media (max-width: 899px) {
+  .takeover .approve.pay-sheet { padding-top: 2.6rem; }
+  .takeover .approve.pay-sheet .money.lg { font-size: 3.6rem; }
+  .pay-card.dark .money.lg { font-size: 1.8rem !important; }
+}
+.dash .stack-row.strong > span:first-child { white-space: nowrap; }
+@media (max-width: 899px) { .dash .stack-row.strong { font-size: 0.9rem; letter-spacing: 0; } .dash .cur-mark { font-size: 1.35rem; } }
