@@ -1,6 +1,6 @@
 /* Landing sections, round 6 "Quiet". Status is never colour alone, text stays 4.5:1 or better. */
 .lp-sec { padding: clamp(5rem, 10vw, 8rem) 0; position: relative; }
-.lp-sec h2, .finale h2 { font-size: clamp(2.2rem, 4.5vw, 3.4rem); line-height: 1.05; letter-spacing: -0.02em; max-width: 18ch; margin: 0 auto; }
+.lp-sec h2, .finale h2 { font-size: clamp(2.2rem, 4.5vw, 3.4rem); line-height: 1.05; letter-spacing: -0.02em; max-width: 28ch; margin: 0 auto; }
 .sec-head { text-align: center; }
 .lp-sec .sub { font-size: 1.1rem; color: var(--muted); max-width: 36rem; margin: 1.25rem auto 0; line-height: 1.6; }
 .lp .sec-head + * { margin-top: clamp(2.5rem, 5vw, 3.5rem); }

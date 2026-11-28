@@ -17,7 +17,7 @@
 .lp-nav .nav-actions { margin-left: auto; display: flex; gap: 0.6rem; }
 .lp-nav .nav-actions .button { margin: 0; min-height: 3rem; padding: 0.5rem 1.2rem; font-size: 1rem; }
 .lp-nav .ghost { display: none; }
-@media (min-width: 62rem) { .lp-nav .links { display: flex; margin-left: 2rem; } .lp-nav .nav-actions { margin-left: 0; } .lp-nav .ghost { display: inline-flex; } }
+@media (min-width: 62rem) { .lp-nav .links { display: flex; margin: 0 auto; } .lp-nav .nav-actions { margin-left: 0; } .lp-nav .ghost { display: inline-flex; } }
 
 /* hero */
 .lp-hero { position: relative; padding: clamp(3rem, 7vw, 6rem) 0 0; overflow: hidden; text-align: center; }
@@ -44,3 +44,6 @@
 .skip:focus { left: 0.5rem; top: 0.5rem; }
 .rv { opacity: 0; transform: translateY(28px); transition: opacity 0.8s cubic-bezier(0.2, 0.7, 0.2, 1), transform 0.8s cubic-bezier(0.2, 0.7, 0.2, 1); }
 .rv.in { opacity: 1; transform: none; }
+/* keep the sticky nav below the sticky simulated banner; on phones the banner wraps, so the nav scrolls away */
+.simulated .lp-nav { top: calc(3rem + 2px); }
+@media (max-width: 40rem) { .simulated .lp-nav { position: relative; top: 0; } }

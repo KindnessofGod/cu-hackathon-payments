@@ -68,10 +68,10 @@ export default function Home() {
           <div className="hero-shots">
             <div className="hero-glow" aria-hidden="true" />
             <div className="phone phone-a">
-              <Image src="/screens/customer-app.webp" width={780} height={1538} priority alt="The customer app: money left to spend this week, with Say it aloud and Talk buttons." />
+              <Image src="/screens/customer-app-v6.webp" width={780} height={1538} priority alt="The customer app: money left to spend this week, with Say it aloud and Talk buttons." />
             </div>
             <div className="phone phone-b">
-              <Image src="/screens/seller-app.webp" width={780} height={1538} priority alt="The seller app: enter the six-digit pay code and an amount, then request payment." />
+              <Image src="/screens/seller-app-v6.webp" width={780} height={1538} priority alt="The seller app: enter the six-digit pay code and an amount, then request payment." />
             </div>
           </div>
           <p className="lp-caption">Screens from the demo. Play money.</p>
